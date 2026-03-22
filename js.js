@@ -100,6 +100,7 @@ let currentRound = 0;
 let totalRounds = 0;
 let timerInterval = null;
 let isPaused = false;
+let voiceUnlocked = false;
 
 // Modal Logic
 settingsToggle.addEventListener('click', () => {
@@ -161,31 +162,54 @@ languageSelect.addEventListener('change', (e) => {
 
 // Initialize Rounds Calculation
 function calculateRounds() {
-    const totalMinutes = parseInt(totalTimeInput.value) || 0;
-    const workSeconds = parseInt(workIntervalInput.value) || 0;
-    const restSeconds = parseInt(restIntervalInput.value) || 0;
+    const totalMinutes = parseFloat(totalTimeInput.value) || 0;
+    const workSeconds = parseFloat(workIntervalInput.value) || 0;
+    const restSeconds = parseFloat(restIntervalInput.value) || 0;
 
     if (workSeconds > 0) {
         const totalWorkoutSeconds = totalMinutes * 60;
         const cycleSeconds = workSeconds + restSeconds;
-        totalRounds = Math.floor(totalWorkoutSeconds / cycleSeconds);
+        totalRounds = cycleSeconds > 0 ? Math.floor(totalWorkoutSeconds / cycleSeconds) : 0;
         
         const lang = translations[currentLanguage];
-        roundsSummary.innerHTML = `${lang.expectedRounds} <span id="rounds-count">${totalRounds > 0 ? totalRounds : 0}</span>`;
+        const roundsCountSpan = document.getElementById('rounds-count');
+        if (roundsCountSpan) {
+            roundsCountSpan.textContent = totalRounds > 0 ? totalRounds : 0;
+        } else {
+            roundsSummary.innerHTML = `${lang.expectedRounds} <span id="rounds-count">${totalRounds > 0 ? totalRounds : 0}</span>`;
+        }
+    } else {
+        totalRounds = 0;
+        const roundsCountSpan = document.getElementById('rounds-count');
+        if (roundsCountSpan) roundsCountSpan.textContent = '0';
     }
 }
 
 [totalTimeInput, workIntervalInput, restIntervalInput].forEach(input => {
     input.addEventListener('input', calculateRounds);
+    input.addEventListener('change', calculateRounds);
+    input.addEventListener('blur', calculateRounds);
 });
 
 // Voice Announcements
 function speak(text) {
-    if (synth.speaking) synth.cancel(); 
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = currentLanguage === 'ar' ? 'ar-SA' : 'en-US';
-    utterance.rate = 1.0;
-    synth.speak(utterance);
+    if (!text) return;
+
+    if (synth.speaking) {
+        synth.cancel();
+        // Short delay to ensure cancellation finishes on mobile
+        setTimeout(() => {
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = currentLanguage === 'ar' ? 'ar-SA' : 'en-US';
+            utterance.rate = 1.0;
+            synth.speak(utterance);
+        }, 50);
+    } else {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = currentLanguage === 'ar' ? 'ar-SA' : 'en-US';
+        utterance.rate = 1.0;
+        synth.speak(utterance);
+    }
     
     announcementRegion.textContent = text;
 }
@@ -224,11 +248,19 @@ function updateDisplay() {
 }
 
 function startTimer() {
-    if (timerInterval) return;
     const lang = translations[currentLanguage];
 
+    // Unlock Voice for Mobile
+    if (!voiceUnlocked) {
+        const silentUtterance = new SpeechSynthesisUtterance('');
+        synth.speak(silentUtterance);
+        voiceUnlocked = true;
+    }
+
+    if (timerInterval) return;
+
     if (!isPaused) {
-        calculateRounds();
+        calculateRounds(); // Force refresh values from inputs
         if (totalRounds <= 0) {
             alert(lang.alertSettings);
             return;
