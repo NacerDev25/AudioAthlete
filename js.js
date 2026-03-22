@@ -102,6 +102,27 @@ let timerInterval = null;
 let isPaused = false;
 let voiceUnlocked = false;
 
+// --- UTILS ---
+
+// Convert Arabic digits to English digits
+function convertArabicDigits(str) {
+    if (typeof str !== 'string') str = String(str);
+    return str.replace(/[٠-٩]/g, function (d) {
+        return d.charCodeAt(0) - 1632;
+    }).replace(/[۰-۹]/g, function (d) {
+        return d.charCodeAt(0) - 1776;
+    });
+}
+
+// Safely get number from input
+function getInputValue(input) {
+    let val = input.value;
+    val = convertArabicDigits(val);
+    return parseFloat(val) || 0;
+}
+
+// --- LOGIC ---
+
 // Modal Logic
 settingsToggle.addEventListener('click', () => {
     settingsModal.classList.add('active');
@@ -113,7 +134,6 @@ closeSettings.addEventListener('click', () => {
     settingsModal.setAttribute('aria-hidden', 'true');
 });
 
-// Close modal if clicking outside the content
 window.addEventListener('click', (e) => {
     if (e.target === settingsModal) {
         settingsModal.classList.remove('active');
@@ -121,7 +141,6 @@ window.addEventListener('click', (e) => {
     }
 });
 
-// ESC key to close modal
 window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && settingsModal.classList.contains('active')) {
         settingsModal.classList.remove('active');
@@ -135,7 +154,6 @@ function updateLanguage() {
     document.documentElement.lang = currentLanguage;
     document.documentElement.dir = lang.dir;
 
-    // Update UI Text
     appTitle.textContent = lang.appTitle;
     appDesc.textContent = lang.appDesc;
     settingsTitle.textContent = lang.settingsTitle;
@@ -147,7 +165,6 @@ function updateLanguage() {
     pauseBtn.textContent = lang.pauseBtn;
     resetBtn.textContent = lang.resetBtn;
     
-    // Update ARIA labels
     settingsToggle.setAttribute('aria-label', currentLanguage === 'ar' ? 'الإعدادات' : 'Settings');
     closeSettings.setAttribute('aria-label', currentLanguage === 'ar' ? 'إغلاق الإعدادات' : 'Close Settings');
     
@@ -160,11 +177,10 @@ languageSelect.addEventListener('change', (e) => {
     updateLanguage();
 });
 
-// Initialize Rounds Calculation
 function calculateRounds() {
-    const totalMinutes = parseFloat(totalTimeInput.value) || 0;
-    const workSeconds = parseFloat(workIntervalInput.value) || 0;
-    const restSeconds = parseFloat(restIntervalInput.value) || 0;
+    const totalMinutes = getInputValue(totalTimeInput);
+    const workSeconds = getInputValue(workIntervalInput);
+    const restSeconds = getInputValue(restIntervalInput);
 
     if (workSeconds > 0) {
         const totalWorkoutSeconds = totalMinutes * 60;
@@ -195,21 +211,13 @@ function calculateRounds() {
 function speak(text) {
     if (!text) return;
 
-    if (synth.speaking) {
-        synth.cancel();
-        // Short delay to ensure cancellation finishes on mobile
-        setTimeout(() => {
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = currentLanguage === 'ar' ? 'ar-SA' : 'en-US';
-            utterance.rate = 1.0;
-            synth.speak(utterance);
-        }, 50);
-    } else {
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = currentLanguage === 'ar' ? 'ar-SA' : 'en-US';
-        utterance.rate = 1.0;
-        synth.speak(utterance);
-    }
+    // Simple robust speak for mobile
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = currentLanguage === 'ar' ? 'ar-SA' : 'en-US';
+    utterance.rate = 1.0;
+    
+    // We don't use cancel() here to avoid mobile bugs, instead we let the queue handle it
+    synth.speak(utterance);
     
     announcementRegion.textContent = text;
 }
@@ -221,7 +229,6 @@ function formatTime(seconds) {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
-// Phase Management
 function updateDisplay() {
     const lang = translations[currentLanguage];
     timerNumbersDisplay.textContent = formatTime(currentIntervalSeconds || 0);
@@ -250,19 +257,19 @@ function updateDisplay() {
 function startTimer() {
     const lang = translations[currentLanguage];
 
-    // Unlock Voice for Mobile
+    // Mobile Voice Unlock (must be direct)
     if (!voiceUnlocked) {
-        const silentUtterance = new SpeechSynthesisUtterance('');
-        synth.speak(silentUtterance);
+        const silent = new SpeechSynthesisUtterance(' ');
+        synth.speak(silent);
         voiceUnlocked = true;
     }
 
     if (timerInterval) return;
 
     if (!isPaused) {
-        calculateRounds(); // Force refresh values from inputs
+        calculateRounds(); 
         if (totalRounds <= 0) {
-            alert(lang.alertSettings);
+            alert(lang.alertSettings + " (Rounds: " + totalRounds + ")");
             return;
         }
         
@@ -297,13 +304,13 @@ function handlePhaseTransition() {
     const lang = translations[currentLanguage];
     if (currentPhase === 'Prepare') {
         currentPhase = 'Work';
-        currentIntervalSeconds = parseInt(workIntervalInput.value);
+        currentIntervalSeconds = getInputValue(workIntervalInput);
         speak(lang.voiceWorkStart(currentRound));
     } 
     else if (currentPhase === 'Work') {
         if (currentRound < totalRounds) {
             currentPhase = 'Rest';
-            currentIntervalSeconds = parseInt(restIntervalInput.value);
+            currentIntervalSeconds = getInputValue(restIntervalInput);
             speak(lang.voiceRestStart(currentIntervalSeconds));
         } else {
             finishWorkout();
@@ -312,7 +319,7 @@ function handlePhaseTransition() {
     else if (currentPhase === 'Rest') {
         currentRound++;
         currentPhase = 'Work';
-        currentIntervalSeconds = parseInt(workIntervalInput.value);
+        currentIntervalSeconds = getInputValue(workIntervalInput);
         speak(lang.voiceNextRound(currentRound));
     }
 }
@@ -355,10 +362,8 @@ function finishWorkout() {
     pauseBtn.disabled = true;
 }
 
-// Event Listeners
 startBtn.addEventListener('click', startTimer);
 pauseBtn.addEventListener('click', pauseTimer);
 resetBtn.addEventListener('click', resetTimer);
 
-// Initial Call
 updateLanguage();
