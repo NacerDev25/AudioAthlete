@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AudioAthlete - Your Audio Workout Timer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container" role="main">
+        <header>
+            <div class="header-top">
+                <h1 id="app-title">AudioAthlete</h1>
+                <button id="settings-toggle" class="btn-icon" aria-label="Settings">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" id="svg-circle" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                </button>
+            </div>
+            <p id="app-description">Smart audio-guided workout timer</p>
+        </header>
+
+        <!-- Settings Modal (Initially Hidden) -->
+        <div id="settings-modal" class="modal" aria-hidden="true" role="dialog" aria-labelledby="settings-title">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="settings-title">Settings</h2>
+                    <button id="close-settings" class="btn-close" aria-label="Close Settings">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="input-group">
+                        <label for="language-select">Language / اللغة:</label>
+                        <select id="language-select">
+                            <option value="en" selected>English</option>
+                            <option value="ar">العربية</option>
+                        </select>
+                    </div>
+                    <!-- Future settings will go here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Workout Inputs Section -->
+        <section class="settings" aria-labelledby="settings-heading">
+            <h2 id="settings-heading">Workout Settings</h2>
+            
+            <div class="input-group">
+                <label for="total-time" id="label-total-time">Total Workout Time (minutes):</label>
+                <input type="number" id="total-time" min="1" value="20" aria-required="true">
+            </div>
+
+            <div class="input-group">
+                <label for="work-interval">Work Interval (seconds):</label>
+                <input type="number" id="work-interval" min="10" value="180" aria-required="true">
+            </div>
+
+            <div class="input-group">
+                <label for="rest-interval">Rest Interval (seconds):</label>
+                <input type="number" id="rest-interval" min="5" value="60" aria-required="true">
+            </div>
+
+            <div class="summary" aria-live="polite" id="rounds-summary">
+                Expected Rounds: <span id="rounds-count">5</span>
+            </div>
+        </section>
+
+        <!-- Timer Display Section -->
+        <section class="timer-display" aria-labelledby="timer-heading">
+            <h2 id="timer-heading" class="sr-only">Timer Display</h2>
+            
+            <div class="status-box" aria-live="assertive">
+                <div id="current-phase" class="phase-label">Ready?</div>
+                <div id="current-round" class="round-label">Round: 0 / 0</div>
+            </div>
+
+            <div class="countdown-box" role="timer" aria-atomic="true">
+                <span id="timer-numbers" class="timer-text">00:00</span>
+            </div>
+        </section>
+
+        <!-- Control Buttons -->
+        <section class="controls">
+            <button id="start-btn" class="btn btn-start">Start Workout</button>
+            <button id="pause-btn" class="btn btn-pause" disabled>Pause</button>
+            <button id="reset-btn" class="btn btn-reset">Reset</button>
+        </section>
+
+        <!-- Hidden area for screen reader announcements only -->
+        <div id="announcement-region" class="sr-only" aria-live="assertive"></div>
+    </div>
+
+    <script src="js.js"></script>
+</body>
+</html>
