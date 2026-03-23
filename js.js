@@ -22,17 +22,18 @@ const translations = {
         rest: 'Rest',
         finished: 'Finished',
         roundLabel: 'Round: ',
-        alertSettings: 'Please check your settings. Work interval must be greater than zero.',
-        voicePrepare: 'Prepare yourself. Starting in 5 seconds.',
-        voice10Sec: '10 seconds remaining.',
-        voiceWorkStart: (round) => `Round ${round}. Work hard!`,
-        voiceRestStart: (sec) => `Work finished. Rest for ${sec} seconds.`,
+        alertSettings: 'Check settings. Work time must be > 0.',
+        voicePrepare: 'Prepare. Starting in 5 seconds.',
+        voice10Sec: '10 seconds left.',
+        voiceWorkStart: (round) => `Round ${round}. Work!`,
+        voiceRestStart: (sec) => `Rest for ${sec} seconds.`,
         voiceNextRound: (round) => `Round ${round}. Go!`,
-        voicePaused: 'Workout paused.',
-        voiceReset: 'Workout reset.',
-        voiceFinished: 'Congratulations! Workout complete.',
-        wakeLockNotSupported: 'Wake Lock not supported. Keep your screen on manually.',
-        wakeLockActive: 'Screen will stay on during workout.'
+        voicePaused: 'Paused.',
+        voiceReset: 'Reset.',
+        voiceFinished: 'Workout complete. Well done!',
+        wakeLockActive: 'Screen will stay on during workout.',
+        settingsLabel: 'Settings',
+        closeSettingsLabel: 'Close Settings'
     },
     ar: {
         dir: 'rtl',
@@ -53,7 +54,7 @@ const translations = {
         rest: 'راحة',
         finished: 'انتهى',
         roundLabel: 'الجولة: ',
-        alertSettings: 'يرجى التحقق من الإعدادات. يجب أن يكون وقت الجولة أكبر من صفر.',
+        alertSettings: 'تأكد من الإعدادات. وقت الجولة يجب أن يكون أكبر من صفر.',
         voicePrepare: 'استعد. سنبدأ بعد 5 ثوانٍ.',
         voice10Sec: 'بقي 10 ثوانٍ.',
         voiceWorkStart: (round) => `الجولة ${round}. ابدأ التمرين!`,
@@ -62,8 +63,9 @@ const translations = {
         voicePaused: 'تم إيقاف التمرين مؤقتاً.',
         voiceReset: 'تمت إعادة ضبط التمرين.',
         voiceFinished: 'تهانينا! اكتمل التمرين.',
-        wakeLockNotSupported: 'خاصية منع انطفاء الشاشة غير مدعومة. يرجى إبقاء الشاشة مفعلة يدوياً.',
-        wakeLockActive: 'ستبقى الشاشة مفعلة طوال فترة التمرين.'
+        wakeLockActive: 'ستبقى الشاشة مفعلة طوال فترة التمرين.',
+        settingsLabel: 'الإعدادات',
+        closeSettingsLabel: 'إغلاق الإعدادات'
     }
 };
 
@@ -73,25 +75,13 @@ let currentLanguage = 'en';
 const settingsModal = document.getElementById('settings-modal');
 const settingsToggle = document.getElementById('settings-toggle');
 const closeSettings = document.getElementById('close-settings');
-const settingsTitle = document.getElementById('settings-title');
-
 const languageSelect = document.getElementById('language-select');
-const appTitle = document.getElementById('app-title');
-const appDesc = document.getElementById('app-description');
-const settingsHeading = document.getElementById('settings-heading');
-const totalTimeLabel = document.querySelector('label[for="total-time"]');
-const workIntervalLabel = document.querySelector('label[for="work-interval"]');
-const restIntervalLabel = document.querySelector('label[for="rest-interval"]');
-const roundsSummary = document.getElementById('rounds-summary');
-
 const totalTimeInput = document.getElementById('total-time');
 const workIntervalInput = document.getElementById('work-interval');
 const restIntervalInput = document.getElementById('rest-interval');
-
 const currentPhaseDisplay = document.getElementById('current-phase');
 const currentRoundDisplay = document.getElementById('current-round');
 const timerNumbersDisplay = document.getElementById('timer-numbers');
-
 const startBtn = document.getElementById('start-btn');
 const pauseBtn = document.getElementById('pause-btn');
 const resetBtn = document.getElementById('reset-btn');
@@ -99,12 +89,11 @@ const announcementRegion = document.getElementById('announcement-region');
 
 // State Variables
 let currentIntervalSeconds = 0;
-let currentPhase = 'Ready'; // Ready, Prep, Work, Rest, Finished
+let currentPhase = 'Ready'; 
 let currentRound = 0;
 let totalRounds = 0;
 let timerInterval = null;
 let isPaused = false;
-let voiceUnlocked = false;
 let wakeLock = null;
 
 // Timing State
@@ -112,7 +101,23 @@ let startTime = 0;
 let phaseDuration = 0;
 let lastSpokenSecond = -1;
 
-// --- UTILS ---
+// --- AUDIO SYNC & MEDIA SESSION ---
+const audioNode = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==');
+audioNode.loop = true;
+
+function setupMediaSession() {
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: 'AudioAthlete',
+            artist: translations[currentLanguage].appTitle,
+            album: translations[currentLanguage].appDesc
+        });
+        navigator.mediaSession.setActionHandler('play', startTimer);
+        navigator.mediaSession.setActionHandler('pause', pauseTimer);
+    }
+}
+
+// --- CORE UTILS ---
 
 function convertArabicDigits(str) {
     if (typeof str !== 'string') str = String(str);
@@ -131,63 +136,37 @@ async function requestWakeLock() {
     if ('wakeLock' in navigator) {
         try {
             wakeLock = await navigator.wakeLock.request('screen');
-            console.log('Wake Lock is active');
-        } catch (err) {
-            console.error(`${err.name}, ${err.message}`);
-        }
+        } catch (err) {}
     }
 }
 
 function releaseWakeLock() {
     if (wakeLock !== null) {
-        wakeLock.release().then(() => {
-            wakeLock = null;
-            console.log('Wake Lock released');
-        });
+        wakeLock.release().then(() => wakeLock = null);
     }
 }
 
-// --- LOGIC ---
+// --- ANNOUNCEMENT LOGIC (TalkBack Friendly) ---
 
-// Modal Logic
-settingsToggle.addEventListener('click', () => {
-    settingsModal.classList.add('active');
-    settingsModal.setAttribute('aria-hidden', 'false');
-});
-
-closeSettings.addEventListener('click', () => {
-    settingsModal.classList.remove('active');
-    settingsModal.setAttribute('aria-hidden', 'true');
-});
-
-// Language Management
-function updateLanguage() {
-    const lang = translations[currentLanguage];
-    document.documentElement.lang = currentLanguage;
-    document.documentElement.dir = lang.dir;
-
-    appTitle.textContent = lang.appTitle;
-    appDesc.textContent = lang.appDesc;
-    settingsTitle.textContent = lang.settingsTitle;
-    settingsHeading.textContent = lang.settingsHeading;
-    totalTimeLabel.textContent = lang.totalTime;
-    workIntervalLabel.textContent = lang.workInterval;
-    restIntervalLabel.textContent = lang.restInterval;
-    startBtn.textContent = lang.startBtn;
-    pauseBtn.textContent = lang.pauseBtn;
-    resetBtn.textContent = lang.resetBtn;
+function announce(text) {
+    if (!text) return;
     
-    settingsToggle.setAttribute('aria-label', currentLanguage === 'ar' ? 'الإعدادات' : 'Settings');
-    closeSettings.setAttribute('aria-label', currentLanguage === 'ar' ? 'إغلاق الإعدادات' : 'Close Settings');
-    
-    calculateRounds();
-    updateDisplay();
+    // 1. ARIA-LIVE for TalkBack (Highest Priority)
+    announcementRegion.textContent = '';
+    setTimeout(() => {
+        announcementRegion.textContent = text;
+    }, 50);
+
+    // 2. Web Speech API (Secondary/Backup)
+    if (!synth.speaking) {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = currentLanguage === 'ar' ? 'ar-SA' : 'en-US';
+        utterance.rate = 1.0;
+        synth.speak(utterance);
+    }
 }
 
-languageSelect.addEventListener('change', (e) => {
-    currentLanguage = e.target.value;
-    updateLanguage();
-});
+// --- TIMER LOGIC ---
 
 function calculateRounds() {
     const totalMinutes = getSafeNumber(totalTimeInput);
@@ -198,14 +177,10 @@ function calculateRounds() {
         const totalWorkoutSeconds = totalMinutes * 60;
         const cycleSeconds = workSeconds + restSeconds;
         totalRounds = cycleSeconds > 0 ? Math.floor(totalWorkoutSeconds / cycleSeconds) : 0;
-        
-        // Final sanity check
         if (totalRounds < 1 && totalMinutes > 0) totalRounds = 1;
 
         const roundsCountSpan = document.getElementById('rounds-count');
-        if (roundsCountSpan) {
-            roundsCountSpan.textContent = totalRounds;
-        }
+        if (roundsCountSpan) roundsCountSpan.textContent = totalRounds;
     } else {
         totalRounds = 0;
         const roundsCountSpan = document.getElementById('rounds-count');
@@ -213,29 +188,6 @@ function calculateRounds() {
     }
 }
 
-[totalTimeInput, workIntervalInput, restIntervalInput].forEach(input => {
-    input.addEventListener('input', calculateRounds);
-});
-
-// Voice Announcements
-function speak(text) {
-    if (!text) return;
-    
-    // Cancel any ongoing speech to prioritize new instructions
-    synth.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = currentLanguage === 'ar' ? 'ar-SA' : 'en-US';
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    
-    synth.speak(utterance);
-    
-    // For Screen Readers
-    announcementRegion.textContent = text;
-}
-
-// Timer Formatting
 function formatTime(seconds) {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -255,7 +207,6 @@ function updateDisplay() {
     
     currentPhaseDisplay.textContent = displayPhase;
 
-    // Visual styles
     if (currentPhase === 'Work') {
         currentPhaseDisplay.style.color = 'var(--primary-color)';
         timerNumbersDisplay.style.color = 'var(--primary-color)';
@@ -276,11 +227,10 @@ function tick() {
     const remaining = phaseDuration - elapsed;
 
     if (remaining !== currentIntervalSeconds) {
-        currentIntervalSeconds = remaining;
+        currentIntervalSeconds = Math.max(0, remaining);
         
-        // Precision checks for voice alerts
         if (currentPhase === 'Work' && currentIntervalSeconds === 10 && lastSpokenSecond !== 10) {
-            speak(translations[currentLanguage].voice10Sec);
+            announce(translations[currentLanguage].voice10Sec);
             lastSpokenSecond = 10;
         }
 
@@ -295,21 +245,18 @@ function tick() {
 function startTimer() {
     const lang = translations[currentLanguage];
 
-    // CRITICAL: Mobile Voice Unlock & Wake Lock
-    if (!voiceUnlocked) {
-        speak(""); // Empty utterance to unlock channel
-        voiceUnlocked = true;
-    }
+    // Recalculate and setup background
+    calculateRounds();
+    setupMediaSession();
+    audioNode.play().catch(() => {});
     requestWakeLock();
 
     if (timerInterval) return;
 
     if (!isPaused) {
-        calculateRounds(); 
         const workSec = getSafeNumber(workIntervalInput);
         if (workSec <= 0) {
-            speak(lang.alertSettings);
-            alert(lang.alertSettings);
+            announce(lang.alertSettings);
             return;
         }
         
@@ -319,9 +266,10 @@ function startTimer() {
         startTime = Date.now();
         currentIntervalSeconds = phaseDuration;
         lastSpokenSecond = -1;
-        speak(lang.voicePrepare);
+        announce(lang.voicePrepare);
+        // Small hidden toast for Wake Lock
+        console.log(lang.wakeLockActive);
     } else {
-        // Resuming from pause
         startTime = Date.now() - ((phaseDuration - currentIntervalSeconds) * 1000);
     }
 
@@ -329,7 +277,6 @@ function startTimer() {
     startBtn.disabled = true;
     pauseBtn.disabled = false;
     
-    // Using high-frequency interval for smooth UI and precision
     timerInterval = setInterval(tick, 100);
     updateDisplay();
 }
@@ -339,28 +286,30 @@ function handlePhaseTransition() {
     lastSpokenSecond = -1;
     startTime = Date.now();
 
-    if (currentPhase === 'Prepare') {
-        currentPhase = 'Work';
-        phaseDuration = getSafeNumber(workIntervalInput);
-        speak(lang.voiceWorkStart(currentRound));
-    } 
-    else if (currentPhase === 'Work') {
-        if (currentRound < totalRounds) {
-            currentPhase = 'Rest';
-            phaseDuration = getSafeNumber(restIntervalInput);
-            speak(lang.voiceRestStart(phaseDuration));
-        } else {
-            finishWorkout();
+    setTimeout(() => {
+        if (currentPhase === 'Prepare') {
+            currentPhase = 'Work';
+            phaseDuration = getSafeNumber(workIntervalInput);
+            announce(lang.voiceWorkStart(currentRound));
+        } 
+        else if (currentPhase === 'Work') {
+            if (currentRound < totalRounds) {
+                currentPhase = 'Rest';
+                phaseDuration = getSafeNumber(restIntervalInput);
+                announce(lang.voiceRestStart(phaseDuration));
+            } else {
+                finishWorkout();
+            }
+        } 
+        else if (currentPhase === 'Rest') {
+            currentRound++;
+            currentPhase = 'Work';
+            phaseDuration = getSafeNumber(workIntervalInput);
+            announce(lang.voiceNextRound(currentRound));
         }
-    } 
-    else if (currentPhase === 'Rest') {
-        currentRound++;
-        currentPhase = 'Work';
-        phaseDuration = getSafeNumber(workIntervalInput);
-        speak(lang.voiceNextRound(currentRound));
-    }
-    
-    currentIntervalSeconds = phaseDuration;
+        currentIntervalSeconds = phaseDuration;
+        updateDisplay();
+    }, 150);
 }
 
 function pauseTimer() {
@@ -370,7 +319,8 @@ function pauseTimer() {
     isPaused = true;
     startBtn.disabled = false;
     pauseBtn.disabled = true;
-    speak(lang.voicePaused);
+    announce(lang.voicePaused);
+    audioNode.pause();
     releaseWakeLock();
 }
 
@@ -382,13 +332,13 @@ function resetTimer() {
     currentRound = 0;
     currentPhase = 'Ready';
     currentIntervalSeconds = 0;
-    lastSpokenSecond = -1;
     
     startBtn.disabled = false;
     pauseBtn.disabled = true;
     
     updateDisplay();
-    speak(lang.voiceReset);
+    announce(lang.voiceReset);
+    audioNode.pause();
     releaseWakeLock();
 }
 
@@ -398,15 +348,60 @@ function finishWorkout() {
     timerInterval = null;
     currentPhase = 'Finished';
     currentIntervalSeconds = 0;
-    speak(lang.voiceFinished);
+    announce(lang.voiceFinished);
     startBtn.disabled = false;
     pauseBtn.disabled = true;
+    audioNode.pause();
     releaseWakeLock();
 }
+
+// UI Setup & Translations
+function updateLanguage() {
+    const lang = translations[currentLanguage];
+    document.documentElement.lang = currentLanguage;
+    document.documentElement.dir = lang.dir;
+    
+    document.getElementById('app-title').textContent = lang.appTitle;
+    document.getElementById('app-description').textContent = lang.appDesc;
+    document.getElementById('settings-title').textContent = lang.settingsTitle;
+    document.getElementById('settings-heading').textContent = lang.settingsHeading;
+    document.querySelector('label[for="total-time"]').textContent = lang.totalTime;
+    document.querySelector('label[for="work-interval"]').textContent = lang.workInterval;
+    document.querySelector('label[for="rest-interval"]').textContent = lang.restInterval;
+    
+    startBtn.textContent = lang.startBtn;
+    pauseBtn.textContent = lang.pauseBtn;
+    resetBtn.textContent = lang.resetBtn;
+    
+    settingsToggle.setAttribute('aria-label', lang.settingsLabel);
+    closeSettings.setAttribute('aria-label', lang.closeSettingsLabel);
+    
+    calculateRounds();
+    updateDisplay();
+}
+
+settingsToggle.addEventListener('click', () => {
+    settingsModal.classList.add('active');
+    settingsModal.setAttribute('aria-hidden', 'false');
+});
+
+closeSettings.addEventListener('click', () => {
+    settingsModal.classList.remove('active');
+    settingsModal.setAttribute('aria-hidden', 'true');
+});
+
+languageSelect.addEventListener('change', (e) => {
+    currentLanguage = e.target.value;
+    updateLanguage();
+});
+
+[totalTimeInput, workIntervalInput, restIntervalInput].forEach(input => {
+    input.addEventListener('input', calculateRounds);
+});
 
 startBtn.addEventListener('click', startTimer);
 pauseBtn.addEventListener('click', pauseTimer);
 resetBtn.addEventListener('click', resetTimer);
 
-// Initialize
+// Initial Load
 updateLanguage();
