@@ -106,14 +106,18 @@ const audioNode = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABA
 audioNode.loop = true;
 
 function setupMediaSession() {
-    if ('mediaSession' in navigator) {
-        navigator.mediaSession.metadata = new MediaMetadata({
-            title: 'AudioAthlete',
-            artist: translations[currentLanguage].appTitle,
-            album: translations[currentLanguage].appDesc
-        });
-        navigator.mediaSession.setActionHandler('play', startTimer);
-        navigator.mediaSession.setActionHandler('pause', pauseTimer);
+    if ('mediaSession' in navigator && window.MediaMetadata) {
+        try {
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: 'AudioAthlete',
+                artist: translations[currentLanguage].appTitle,
+                album: translations[currentLanguage].appDesc
+            });
+            navigator.mediaSession.setActionHandler('play', startTimer);
+            navigator.mediaSession.setActionHandler('pause', pauseTimer);
+        } catch (e) {
+            console.error("MediaSession error:", e);
+        }
     }
 }
 
@@ -158,11 +162,15 @@ function announce(text) {
     }, 50);
 
     // 2. Web Speech API (Secondary/Backup)
-    if (!synth.speaking) {
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = currentLanguage === 'ar' ? 'ar-SA' : 'en-US';
-        utterance.rate = 1.0;
-        synth.speak(utterance);
+    if (synth && !synth.speaking) {
+        try {
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = currentLanguage === 'ar' ? 'ar-SA' : 'en-US';
+            utterance.rate = 1.0;
+            synth.speak(utterance);
+        } catch (e) {
+            console.error("Speech error:", e);
+        }
     }
 }
 
@@ -244,6 +252,14 @@ function tick() {
 
 function startTimer() {
     const lang = translations[currentLanguage];
+
+    // Unlock speech for mobile
+    if (synth) {
+        try {
+            const unlock = new SpeechSynthesisUtterance("");
+            synth.speak(unlock);
+        } catch (e) {}
+    }
 
     // Recalculate and setup background
     calculateRounds();
