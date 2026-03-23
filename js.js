@@ -101,9 +101,32 @@ let startTime = 0;
 let phaseDuration = 0;
 let lastSpokenSecond = -1;
 
-// --- AUDIO SYNC & MEDIA SESSION ---
+// --- AUDIO ASSETS ---
 const audioNode = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==');
 audioNode.loop = true;
+
+const beepSound = new Audio('data:audio/wav;base64,UklGRlQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YVAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA');
+// Simple beep generator (low-level fallback)
+function playBeep() {
+    try {
+        const context = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = context.createOscillator();
+        const gain = context.createGain();
+        osc.connect(gain);
+        gain.connect(context.destination);
+        osc.type = 'sine';
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.1, context.currentTime);
+        osc.start();
+        osc.stop(context.currentTime + 0.1);
+    } catch (e) {}
+}
+
+function triggerHaptic() {
+    if ("vibrate" in navigator) {
+        navigator.vibrate(50);
+    }
+}
 
 function setupMediaSession() {
     if ('mediaSession' in navigator && window.MediaMetadata) {
@@ -237,9 +260,16 @@ function tick() {
     if (remaining !== currentIntervalSeconds) {
         currentIntervalSeconds = Math.max(0, remaining);
         
+        // Voice Announcement for 10 seconds
         if (currentPhase === 'Work' && currentIntervalSeconds === 10 && lastSpokenSecond !== 10) {
             announce(translations[currentLanguage].voice10Sec);
             lastSpokenSecond = 10;
+        }
+
+        // Beep sounds for last 3 seconds
+        if (currentIntervalSeconds > 0 && currentIntervalSeconds <= 3 && lastSpokenSecond !== currentIntervalSeconds) {
+            playBeep();
+            lastSpokenSecond = currentIntervalSeconds;
         }
 
         if (currentIntervalSeconds <= 0) {
@@ -381,9 +411,11 @@ function updateLanguage() {
     document.getElementById('app-description').textContent = lang.appDesc;
     document.getElementById('settings-title').textContent = lang.settingsTitle;
     document.getElementById('settings-heading').textContent = lang.settingsHeading;
-    document.querySelector('label[for="total-time"]').textContent = lang.totalTime;
-    document.querySelector('label[for="work-interval"]').textContent = lang.workInterval;
-    document.querySelector('label[for="rest-interval"]').textContent = lang.restInterval;
+    
+    // Updated chip section headings
+    document.getElementById('label-total-time').textContent = lang.totalTime;
+    document.getElementById('label-work-interval').textContent = lang.workInterval;
+    document.getElementById('label-rest-interval').textContent = lang.restInterval;
     
     startBtn.textContent = lang.startBtn;
     pauseBtn.textContent = lang.pauseBtn;
@@ -394,6 +426,47 @@ function updateLanguage() {
     
     calculateRounds();
     updateDisplay();
+}
+
+// CHIP SELECTION LOGIC
+function setupChips() {
+    const chipGroups = document.querySelectorAll('.chip-group');
+    
+    chipGroups.forEach(group => {
+        const chips = group.querySelectorAll('.chip');
+        const hiddenInputId = group.getAttribute('aria-labelledby').replace('label-', '');
+        const hiddenInput = document.getElementById(hiddenInputId);
+        const heading = document.getElementById(group.getAttribute('aria-labelledby'));
+
+        chips.forEach(chip => {
+            chip.addEventListener('click', () => {
+                // 1. Update visual state
+                chips.forEach(c => {
+                    c.classList.remove('selected');
+                    c.setAttribute('aria-checked', 'false');
+                });
+                chip.classList.add('selected');
+                chip.setAttribute('aria-checked', 'true');
+
+                // 2. Update hidden value
+                hiddenInput.value = chip.dataset.value;
+
+                // 3. Accessibility: Announce selection and re-focus heading
+                const valueText = chip.textContent;
+                const headingText = heading.textContent.split('(')[0].trim();
+                announce(`${headingText}: ${valueText}`);
+                
+                // 4. Haptic Feedback
+                triggerHaptic();
+
+                // 5. Re-focus heading so screen reader confirms the section
+                heading.focus();
+
+                // 6. Recalculate
+                calculateRounds();
+            });
+        });
+    });
 }
 
 settingsToggle.addEventListener('click', () => {
@@ -411,13 +484,10 @@ languageSelect.addEventListener('change', (e) => {
     updateLanguage();
 });
 
-[totalTimeInput, workIntervalInput, restIntervalInput].forEach(input => {
-    input.addEventListener('input', calculateRounds);
-});
-
 startBtn.addEventListener('click', startTimer);
 pauseBtn.addEventListener('click', pauseTimer);
 resetBtn.addEventListener('click', resetTimer);
 
 // Initial Load
 updateLanguage();
+setupChips();

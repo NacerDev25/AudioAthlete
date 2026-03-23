@@ -42,19 +42,43 @@
         <section class="settings" aria-labelledby="settings-heading">
             <h2 id="settings-heading">Workout Settings</h2>
             
-            <div class="input-group">
-                <label for="total-time" id="label-total-time">Total Workout Time (minutes):</label>
-                <input type="number" id="total-time" min="1" value="20" aria-required="true">
+            <!-- Total Time Selection -->
+            <div class="setting-block" id="block-total-time">
+                <h3 id="label-total-time" tabindex="-1">Total Workout Time (minutes)</h3>
+                <div class="chip-group" role="radiogroup" aria-labelledby="label-total-time">
+                    <button class="chip" data-value="10" aria-checked="false" role="radio">10</button>
+                    <button class="chip selected" data-value="20" aria-checked="true" role="radio">20</button>
+                    <button class="chip" data-value="30" aria-checked="false" role="radio">30</button>
+                    <button class="chip" data-value="45" aria-checked="false" role="radio">45</button>
+                    <button class="chip" data-value="60" aria-checked="false" role="radio">60</button>
+                </div>
+                <input type="hidden" id="total-time" value="20">
             </div>
 
-            <div class="input-group">
-                <label for="work-interval">Work Interval (seconds):</label>
-                <input type="number" id="work-interval" min="10" value="180" aria-required="true">
+            <!-- Work Interval Selection -->
+            <div class="setting-block" id="block-work-interval">
+                <h3 id="label-work-interval" tabindex="-1">Work Interval (seconds)</h3>
+                <div class="chip-group" role="radiogroup" aria-labelledby="label-work-interval">
+                    <button class="chip" data-value="30" aria-checked="false" role="radio">30s</button>
+                    <button class="chip" data-value="45" aria-checked="false" role="radio">45s</button>
+                    <button class="chip" data-value="60" aria-checked="false" role="radio">60s</button>
+                    <button class="chip selected" data-value="180" aria-checked="true" role="radio">3m</button>
+                    <button class="chip" data-value="300" aria-checked="false" role="radio">5m</button>
+                </div>
+                <input type="hidden" id="work-interval" value="180">
             </div>
 
-            <div class="input-group">
-                <label for="rest-interval">Rest Interval (seconds):</label>
-                <input type="number" id="rest-interval" min="5" value="60" aria-required="true">
+            <!-- Rest Interval Selection -->
+            <div class="setting-block" id="block-rest-interval">
+                <h3 id="label-rest-interval" tabindex="-1">Rest Interval (seconds)</h3>
+                <div class="chip-group" role="radiogroup" aria-labelledby="label-rest-interval">
+                    <button class="chip" data-value="15" aria-checked="false" role="radio">15s</button>
+                    <button class="chip" data-value="30" aria-checked="false" role="radio">30s</button>
+                    <button class="chip selected" data-value="60" aria-checked="true" role="radio">60s</button>
+                    <button class="chip" data-value="90" aria-checked="false" role="radio">90s</button>
+                    <button class="chip" data-value="120" aria-checked="false" role="radio">2m</button>
+                </div>
+                <input type="hidden" id="rest-interval" value="60">
             </div>
 
             <div class="summary" aria-live="polite" id="rounds-summary">
