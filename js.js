@@ -22,7 +22,7 @@ const translations = {
         rest: 'Rest',
         finished: 'Finished',
         roundLabel: 'Round: ',
-        alertSettings: 'Please check your settings. Total rounds must be greater than zero.',
+        alertSettings: 'Please check your settings. Work interval must be greater than zero.',
         voicePrepare: 'Prepare yourself. Starting in 5 seconds.',
         voice10Sec: '10 seconds remaining.',
         voiceWorkStart: (round) => `Round ${round}. Work hard!`,
@@ -30,7 +30,9 @@ const translations = {
         voiceNextRound: (round) => `Round ${round}. Go!`,
         voicePaused: 'Workout paused.',
         voiceReset: 'Workout reset.',
-        voiceFinished: 'Congratulations! Workout complete.'
+        voiceFinished: 'Congratulations! Workout complete.',
+        wakeLockNotSupported: 'Wake Lock not supported. Keep your screen on manually.',
+        wakeLockActive: 'Screen will stay on during workout.'
     },
     ar: {
         dir: 'rtl',
@@ -51,7 +53,7 @@ const translations = {
         rest: 'راحة',
         finished: 'انتهى',
         roundLabel: 'الجولة: ',
-        alertSettings: 'يرجى التحقق من الإعدادات. يجب أن يكون عدد الجولات أكبر من صفر.',
+        alertSettings: 'يرجى التحقق من الإعدادات. يجب أن يكون وقت الجولة أكبر من صفر.',
         voicePrepare: 'استعد. سنبدأ بعد 5 ثوانٍ.',
         voice10Sec: 'بقي 10 ثوانٍ.',
         voiceWorkStart: (round) => `الجولة ${round}. ابدأ التمرين!`,
@@ -59,7 +61,9 @@ const translations = {
         voiceNextRound: (round) => `الجولة ${round}. انطلق!`,
         voicePaused: 'تم إيقاف التمرين مؤقتاً.',
         voiceReset: 'تمت إعادة ضبط التمرين.',
-        voiceFinished: 'تهانينا! اكتمل التمرين.'
+        voiceFinished: 'تهانينا! اكتمل التمرين.',
+        wakeLockNotSupported: 'خاصية منع انطفاء الشاشة غير مدعومة. يرجى إبقاء الشاشة مفعلة يدوياً.',
+        wakeLockActive: 'ستبقى الشاشة مفعلة طوال فترة التمرين.'
     }
 };
 
@@ -94,31 +98,53 @@ const resetBtn = document.getElementById('reset-btn');
 const announcementRegion = document.getElementById('announcement-region');
 
 // State Variables
-let currentIntervalSeconds;
-let currentPhase = 'Ready'; // Ready, Prep, Work, Rest
+let currentIntervalSeconds = 0;
+let currentPhase = 'Ready'; // Ready, Prep, Work, Rest, Finished
 let currentRound = 0;
 let totalRounds = 0;
 let timerInterval = null;
 let isPaused = false;
 let voiceUnlocked = false;
+let wakeLock = null;
+
+// Timing State
+let startTime = 0;
+let phaseDuration = 0;
+let lastSpokenSecond = -1;
 
 // --- UTILS ---
 
-// Convert Arabic digits to English digits
 function convertArabicDigits(str) {
     if (typeof str !== 'string') str = String(str);
-    return str.replace(/[٠-٩]/g, function (d) {
-        return d.charCodeAt(0) - 1632;
-    }).replace(/[۰-۹]/g, function (d) {
-        return d.charCodeAt(0) - 1776;
-    });
+    return str.replace(/[٠-٩]/g, (d) => d.charCodeAt(0) - 1632)
+              .replace(/[۰-۹]/g, (d) => d.charCodeAt(0) - 1776);
 }
 
-// Safely get number from input
-function getInputValue(input) {
-    let val = input.value;
-    val = convertArabicDigits(val);
-    return parseFloat(val) || 0;
+function getSafeNumber(input) {
+    let val = convertArabicDigits(input.value);
+    let num = parseFloat(val);
+    return isNaN(num) ? 0 : num;
+}
+
+// --- SCREEN WAKE LOCK ---
+async function requestWakeLock() {
+    if ('wakeLock' in navigator) {
+        try {
+            wakeLock = await navigator.wakeLock.request('screen');
+            console.log('Wake Lock is active');
+        } catch (err) {
+            console.error(`${err.name}, ${err.message}`);
+        }
+    }
+}
+
+function releaseWakeLock() {
+    if (wakeLock !== null) {
+        wakeLock.release().then(() => {
+            wakeLock = null;
+            console.log('Wake Lock released');
+        });
+    }
 }
 
 // --- LOGIC ---
@@ -132,20 +158,6 @@ settingsToggle.addEventListener('click', () => {
 closeSettings.addEventListener('click', () => {
     settingsModal.classList.remove('active');
     settingsModal.setAttribute('aria-hidden', 'true');
-});
-
-window.addEventListener('click', (e) => {
-    if (e.target === settingsModal) {
-        settingsModal.classList.remove('active');
-        settingsModal.setAttribute('aria-hidden', 'true');
-    }
-});
-
-window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && settingsModal.classList.contains('active')) {
-        settingsModal.classList.remove('active');
-        settingsModal.setAttribute('aria-hidden', 'true');
-    }
 });
 
 // Language Management
@@ -178,21 +190,21 @@ languageSelect.addEventListener('change', (e) => {
 });
 
 function calculateRounds() {
-    const totalMinutes = getInputValue(totalTimeInput);
-    const workSeconds = getInputValue(workIntervalInput);
-    const restSeconds = getInputValue(restIntervalInput);
+    const totalMinutes = getSafeNumber(totalTimeInput);
+    const workSeconds = getSafeNumber(workIntervalInput);
+    const restSeconds = getSafeNumber(restIntervalInput);
 
     if (workSeconds > 0) {
         const totalWorkoutSeconds = totalMinutes * 60;
         const cycleSeconds = workSeconds + restSeconds;
         totalRounds = cycleSeconds > 0 ? Math.floor(totalWorkoutSeconds / cycleSeconds) : 0;
         
-        const lang = translations[currentLanguage];
+        // Final sanity check
+        if (totalRounds < 1 && totalMinutes > 0) totalRounds = 1;
+
         const roundsCountSpan = document.getElementById('rounds-count');
         if (roundsCountSpan) {
-            roundsCountSpan.textContent = totalRounds > 0 ? totalRounds : 0;
-        } else {
-            roundsSummary.innerHTML = `${lang.expectedRounds} <span id="rounds-count">${totalRounds > 0 ? totalRounds : 0}</span>`;
+            roundsCountSpan.textContent = totalRounds;
         }
     } else {
         totalRounds = 0;
@@ -203,22 +215,23 @@ function calculateRounds() {
 
 [totalTimeInput, workIntervalInput, restIntervalInput].forEach(input => {
     input.addEventListener('input', calculateRounds);
-    input.addEventListener('change', calculateRounds);
-    input.addEventListener('blur', calculateRounds);
 });
 
 // Voice Announcements
 function speak(text) {
     if (!text) return;
+    
+    // Cancel any ongoing speech to prioritize new instructions
+    synth.cancel();
 
-    // Simple robust speak for mobile
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = currentLanguage === 'ar' ? 'ar-SA' : 'en-US';
     utterance.rate = 1.0;
+    utterance.pitch = 1.0;
     
-    // We don't use cancel() here to avoid mobile bugs, instead we let the queue handle it
     synth.speak(utterance);
     
+    // For Screen Readers
     announcementRegion.textContent = text;
 }
 
@@ -231,7 +244,7 @@ function formatTime(seconds) {
 
 function updateDisplay() {
     const lang = translations[currentLanguage];
-    timerNumbersDisplay.textContent = formatTime(currentIntervalSeconds || 0);
+    timerNumbersDisplay.textContent = formatTime(currentIntervalSeconds);
     currentRoundDisplay.textContent = `${lang.roundLabel}${currentRound} / ${totalRounds}`;
     
     let displayPhase = lang.ready;
@@ -242,6 +255,7 @@ function updateDisplay() {
     
     currentPhaseDisplay.textContent = displayPhase;
 
+    // Visual styles
     if (currentPhase === 'Work') {
         currentPhaseDisplay.style.color = 'var(--primary-color)';
         timerNumbersDisplay.style.color = 'var(--primary-color)';
@@ -254,64 +268,87 @@ function updateDisplay() {
     }
 }
 
+function tick() {
+    if (isPaused) return;
+
+    const now = Date.now();
+    const elapsed = Math.floor((now - startTime) / 1000);
+    const remaining = phaseDuration - elapsed;
+
+    if (remaining !== currentIntervalSeconds) {
+        currentIntervalSeconds = remaining;
+        
+        // Precision checks for voice alerts
+        if (currentPhase === 'Work' && currentIntervalSeconds === 10 && lastSpokenSecond !== 10) {
+            speak(translations[currentLanguage].voice10Sec);
+            lastSpokenSecond = 10;
+        }
+
+        if (currentIntervalSeconds <= 0) {
+            handlePhaseTransition();
+        }
+        
+        updateDisplay();
+    }
+}
+
 function startTimer() {
     const lang = translations[currentLanguage];
 
-    // Mobile Voice Unlock (must be direct)
+    // CRITICAL: Mobile Voice Unlock & Wake Lock
     if (!voiceUnlocked) {
-        const silent = new SpeechSynthesisUtterance(' ');
-        synth.speak(silent);
+        speak(""); // Empty utterance to unlock channel
         voiceUnlocked = true;
     }
+    requestWakeLock();
 
     if (timerInterval) return;
 
     if (!isPaused) {
         calculateRounds(); 
-        if (totalRounds <= 0) {
-            alert(lang.alertSettings + " (Rounds: " + totalRounds + ")");
+        const workSec = getSafeNumber(workIntervalInput);
+        if (workSec <= 0) {
+            speak(lang.alertSettings);
+            alert(lang.alertSettings);
             return;
         }
         
         currentRound = 1;
         currentPhase = 'Prepare';
-        currentIntervalSeconds = 5; 
+        phaseDuration = 5;
+        startTime = Date.now();
+        currentIntervalSeconds = phaseDuration;
+        lastSpokenSecond = -1;
         speak(lang.voicePrepare);
+    } else {
+        // Resuming from pause
+        startTime = Date.now() - ((phaseDuration - currentIntervalSeconds) * 1000);
     }
 
     isPaused = false;
     startBtn.disabled = true;
     pauseBtn.disabled = false;
     
-    timerInterval = setInterval(() => {
-        currentIntervalSeconds--;
-        
-        if (currentPhase === 'Work' && currentIntervalSeconds === 10) {
-            speak(lang.voice10Sec);
-        }
-
-        if (currentIntervalSeconds < 0) {
-            handlePhaseTransition();
-        }
-
-        updateDisplay();
-    }, 1000);
-
+    // Using high-frequency interval for smooth UI and precision
+    timerInterval = setInterval(tick, 100);
     updateDisplay();
 }
 
 function handlePhaseTransition() {
     const lang = translations[currentLanguage];
+    lastSpokenSecond = -1;
+    startTime = Date.now();
+
     if (currentPhase === 'Prepare') {
         currentPhase = 'Work';
-        currentIntervalSeconds = getInputValue(workIntervalInput);
+        phaseDuration = getSafeNumber(workIntervalInput);
         speak(lang.voiceWorkStart(currentRound));
     } 
     else if (currentPhase === 'Work') {
         if (currentRound < totalRounds) {
             currentPhase = 'Rest';
-            currentIntervalSeconds = getInputValue(restIntervalInput);
-            speak(lang.voiceRestStart(currentIntervalSeconds));
+            phaseDuration = getSafeNumber(restIntervalInput);
+            speak(lang.voiceRestStart(phaseDuration));
         } else {
             finishWorkout();
         }
@@ -319,9 +356,11 @@ function handlePhaseTransition() {
     else if (currentPhase === 'Rest') {
         currentRound++;
         currentPhase = 'Work';
-        currentIntervalSeconds = getInputValue(workIntervalInput);
+        phaseDuration = getSafeNumber(workIntervalInput);
         speak(lang.voiceNextRound(currentRound));
     }
+    
+    currentIntervalSeconds = phaseDuration;
 }
 
 function pauseTimer() {
@@ -332,6 +371,7 @@ function pauseTimer() {
     startBtn.disabled = false;
     pauseBtn.disabled = true;
     speak(lang.voicePaused);
+    releaseWakeLock();
 }
 
 function resetTimer() {
@@ -342,13 +382,14 @@ function resetTimer() {
     currentRound = 0;
     currentPhase = 'Ready';
     currentIntervalSeconds = 0;
+    lastSpokenSecond = -1;
     
     startBtn.disabled = false;
     pauseBtn.disabled = true;
     
     updateDisplay();
-    timerNumbersDisplay.textContent = "00:00";
     speak(lang.voiceReset);
+    releaseWakeLock();
 }
 
 function finishWorkout() {
@@ -360,10 +401,12 @@ function finishWorkout() {
     speak(lang.voiceFinished);
     startBtn.disabled = false;
     pauseBtn.disabled = true;
+    releaseWakeLock();
 }
 
 startBtn.addEventListener('click', startTimer);
 pauseBtn.addEventListener('click', pauseTimer);
 resetBtn.addEventListener('click', resetTimer);
 
+// Initialize
 updateLanguage();
