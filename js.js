@@ -103,22 +103,71 @@ let lastSpokenSecond = -1;
 let pausedTime = 0;
 let halfwayPointTriggered = false;
 
-// --- AUDIO ASSETS LOGIC ---
+// --- ADVANCED AUDIO POOL (The Fix for Mobile Devices) ---
 
-// Silent audio to keep the process alive in background
+/**
+ * Pre-loading all professional audio assets into memory.
+ * This ensures the browser can play them instantly later.
+ */
+const audioPool = {
+    ar: {
+        start: new Audio('sounds/ar/start.mp3'),
+        half: new Audio('sounds/ar/half.mp3'),
+        three: new Audio('sounds/ar/three.mp3'),
+        rest: new Audio('sounds/ar/rest.mp3')
+    },
+    en: {
+        start: new Audio('sounds/en/start.mp3'),
+        half: new Audio('sounds/en/half.mp3'),
+        three: new Audio('sounds/en/three.mp3'),
+        rest: new Audio('sounds/en/rest.mp3')
+    }
+};
+
+// Silent background audio to keep process alive
 const silentAudioNode = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==');
 silentAudioNode.loop = true;
 
 /**
- * Intelligent Audio Player: Plays generated MP3 assets from local folders
+ * PROFESSIONAL FIX: Prime the Audio Engine.
+ * Mobile browsers block audio UNLESS the specific sound object has been
+ * played/interacted with during a USER click event.
+ */
+function primeAudioEngine() {
+    // 1. Prime Speech Synthesis
+    if (synth) {
+        synth.cancel();
+        const unlock = new SpeechSynthesisUtterance("");
+        synth.speak(unlock);
+    }
+
+    // 2. Prime all MP3 files in the pool (Silent burst)
+    // We iterate through all languages and sounds to "Unlock" them forever for this session.
+    Object.values(audioPool).forEach(langPool => {
+        Object.values(langPool).forEach(audio => {
+            audio.play().then(() => {
+                audio.pause();
+                audio.currentTime = 0;
+            }).catch(() => {}); // Expected catch if user clicked too fast
+        });
+    });
+
+    // 3. Prime silent background loop
+    silentAudioNode.play().catch(() => {});
+}
+
+/**
+ * Play from the pre-loaded pool for instant, unblocked response.
  */
 function playNotification(soundName) {
     try {
-        const audioPath = `sounds/${currentLanguage}/${soundName}.mp3`;
-        const audio = new Audio(audioPath);
-        audio.play().catch(e => console.warn(`Audio play blocked: ${soundName}`, e));
+        const audio = audioPool[currentLanguage][soundName];
+        if (audio) {
+            audio.currentTime = 0; // Rewind to start
+            audio.play().catch(e => console.warn(`Pool play blocked: ${soundName}`, e));
+        }
     } catch (e) {
-        console.error("Audio error:", e);
+        console.error("Audio pool error:", e);
     }
 }
 
@@ -154,7 +203,6 @@ function convertArabicDigits(str) {
 
 function getSafeNumber(input) {
     let val = convertArabicDigits(input.value);
-    // PROFESSIONAL: Use Number() and validate
     let num = Number(val);
     if (isNaN(num) || num < 0) return 0;
     return num;
@@ -175,7 +223,6 @@ function releaseWakeLock() {
     }
 }
 
-// Auto-reacquire wake lock when visible
 document.addEventListener('visibilitychange', async () => {
     if (wakeLock !== null && document.visibilityState === 'visible') {
         await requestWakeLock();
@@ -187,15 +234,13 @@ document.addEventListener('visibilitychange', async () => {
 function announce(text) {
     if (!text) return;
     
-    // 1. ARIA-LIVE for TalkBack (Highest Priority)
     announcementRegion.textContent = '';
     setTimeout(() => {
         announcementRegion.textContent = text;
     }, 50);
 
-    // 2. Web Speech API (Secondary/Backup Queue Handling)
     if (synth) {
-        synth.cancel(); // Prioritize latest alert
+        synth.cancel();
         try {
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = currentLanguage === 'ar' ? 'ar-SA' : 'en-US';
@@ -277,19 +322,19 @@ function tick() {
     if (roundedRemaining !== currentIntervalSeconds) {
         currentIntervalSeconds = roundedRemaining;
         
-        // --- LOGIC: Halfway point notification ---
+        // Halfway point check
         if (currentPhase === 'Work' && !halfwayPointTriggered && currentIntervalSeconds <= phaseDuration / 2) {
             playNotification('half');
             halfwayPointTriggered = true;
         }
 
-        // --- LOGIC: Last 3 seconds (New MP3) ---
+        // Last 3 seconds check
         if (currentIntervalSeconds <= 3 && currentIntervalSeconds > 0 && lastSpokenSecond !== currentIntervalSeconds) {
             playNotification('three');
             lastSpokenSecond = currentIntervalSeconds;
         }
 
-        // Voice Announcement for 10 seconds (Screen Reader support)
+        // TalkBack support for 10 seconds
         if (currentPhase === 'Work' && currentIntervalSeconds === 10) {
             announce(translations[currentLanguage].voice10Sec);
         }
@@ -305,16 +350,11 @@ function tick() {
 function startTimer() {
     const lang = translations[currentLanguage];
 
-    // MOBILE UNLOCK: Open speech and audio channels
-    if (synth) {
-        synth.cancel();
-        const unlock = new SpeechSynthesisUtterance("");
-        synth.speak(unlock);
-    }
+    // CRITICAL: Unlock all audio and speech engines on first user click
+    primeAudioEngine();
 
     calculateRounds();
     setupMediaSession();
-    silentAudioNode.play().catch(() => {});
     requestWakeLock();
 
     if (timerInterval) return;
@@ -335,7 +375,6 @@ function startTimer() {
         halfwayPointTriggered = false;
         
         announce(lang.voicePrepare);
-        // We will trigger 'start' after prepare phase
     } else {
         const alreadyElapsed = phaseDuration - pausedTime;
         phaseStartTime = Date.now() - (alreadyElapsed * 1000);
@@ -354,20 +393,19 @@ function handlePhaseTransition() {
     lastSpokenSecond = -1;
     halfwayPointTriggered = false;
     
-    // Maintain absolute timing alignment
     phaseStartTime = phaseStartTime + (phaseDuration * 1000);
 
     if (currentPhase === 'Prepare') {
         currentPhase = 'Work';
         phaseDuration = getSafeNumber(workIntervalInput);
-        playNotification('start'); // Trigger new professional audio
+        playNotification('start');
         announce(lang.voiceWorkStart(currentRound));
     } 
     else if (currentPhase === 'Work') {
         if (currentRound < totalRounds) {
             currentPhase = 'Rest';
             phaseDuration = getSafeNumber(restIntervalInput);
-            playNotification('rest'); // Trigger new professional audio
+            playNotification('rest');
             announce(lang.voiceRestStart(phaseDuration));
         } else {
             finishWorkout();
@@ -378,7 +416,7 @@ function handlePhaseTransition() {
         currentRound++;
         currentPhase = 'Work';
         phaseDuration = getSafeNumber(workIntervalInput);
-        playNotification('start'); // Trigger for next round
+        playNotification('start');
         announce(lang.voiceNextRound(currentRound));
     }
     
