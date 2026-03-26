@@ -133,27 +133,32 @@ silentAudioNode.loop = true;
  * Mobile browsers block audio UNLESS the specific sound object has been
  * played/interacted with during a USER click event.
  */
-function primeAudioEngine() {
+async function primeAudioEngine() {
     // 1. Prime Speech Synthesis
     if (synth) {
         synth.cancel();
-        const unlock = new SpeechSynthesisUtterance("");
+        const unlock = new SpeechSynthesisUtterance(" ");
+        unlock.volume = 0; // Silent but active
         synth.speak(unlock);
     }
 
-    // 2. Prime all MP3 files in the pool (Silent burst)
-    // We iterate through all languages and sounds to "Unlock" them forever for this session.
-    Object.values(audioPool).forEach(langPool => {
-        Object.values(langPool).forEach(audio => {
-            audio.play().then(() => {
-                audio.pause();
-                audio.currentTime = 0;
-            }).catch(() => {}); // Expected catch if user clicked too fast
-        });
-    });
+    // 2. Prime all MP3 files sequentially to avoid blocking
+    // We only prime the current language to be efficient on mobile
+    const langPool = audioPool[currentLanguage];
+    for (const audio of Object.values(langPool)) {
+        try {
+            await audio.play();
+            audio.pause();
+            audio.currentTime = 0;
+        } catch (e) {
+            console.warn("Audio priming delayed or blocked", e);
+        }
+    }
 
     // 3. Prime silent background loop
-    silentAudioNode.play().catch(() => {});
+    try {
+        await silentAudioNode.play();
+    } catch (e) {}
 }
 
 /**
