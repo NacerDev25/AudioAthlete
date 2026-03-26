@@ -96,30 +96,30 @@ let timerInterval = null;
 let isPaused = false;
 let wakeLock = null;
 
-// Timing State
-let startTime = 0;
+// Timing State (Drift-Free logic)
+let phaseStartTime = 0;
 let phaseDuration = 0;
 let lastSpokenSecond = -1;
+let pausedTime = 0;
+let halfwayPointTriggered = false;
 
-// --- AUDIO ASSETS ---
-const audioNode = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==');
-audioNode.loop = true;
+// --- AUDIO ASSETS LOGIC ---
 
-const beepSound = new Audio('data:audio/wav;base64,UklGRlQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YVAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA');
-// Simple beep generator (low-level fallback)
-function playBeep() {
+// Silent audio to keep the process alive in background
+const silentAudioNode = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==');
+silentAudioNode.loop = true;
+
+/**
+ * Intelligent Audio Player: Plays generated MP3 assets from local folders
+ */
+function playNotification(soundName) {
     try {
-        const context = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = context.createOscillator();
-        const gain = context.createGain();
-        osc.connect(gain);
-        gain.connect(context.destination);
-        osc.type = 'sine';
-        osc.frequency.value = 880;
-        gain.gain.setValueAtTime(0.1, context.currentTime);
-        osc.start();
-        osc.stop(context.currentTime + 0.1);
-    } catch (e) {}
+        const audioPath = `sounds/${currentLanguage}/${soundName}.mp3`;
+        const audio = new Audio(audioPath);
+        audio.play().catch(e => console.warn(`Audio play blocked: ${soundName}`, e));
+    } catch (e) {
+        console.error("Audio error:", e);
+    }
 }
 
 function triggerHaptic() {
@@ -154,8 +154,10 @@ function convertArabicDigits(str) {
 
 function getSafeNumber(input) {
     let val = convertArabicDigits(input.value);
-    let num = parseFloat(val);
-    return isNaN(num) ? 0 : num;
+    // PROFESSIONAL: Use Number() and validate
+    let num = Number(val);
+    if (isNaN(num) || num < 0) return 0;
+    return num;
 }
 
 // --- SCREEN WAKE LOCK ---
@@ -173,6 +175,13 @@ function releaseWakeLock() {
     }
 }
 
+// Auto-reacquire wake lock when visible
+document.addEventListener('visibilitychange', async () => {
+    if (wakeLock !== null && document.visibilityState === 'visible') {
+        await requestWakeLock();
+    }
+});
+
 // --- ANNOUNCEMENT LOGIC (TalkBack Friendly) ---
 
 function announce(text) {
@@ -184,12 +193,13 @@ function announce(text) {
         announcementRegion.textContent = text;
     }, 50);
 
-    // 2. Web Speech API (Secondary/Backup)
-    if (synth && !synth.speaking) {
+    // 2. Web Speech API (Secondary/Backup Queue Handling)
+    if (synth) {
+        synth.cancel(); // Prioritize latest alert
         try {
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = currentLanguage === 'ar' ? 'ar-SA' : 'en-US';
-            utterance.rate = 1.0;
+            utterance.rate = 1.1; 
             synth.speak(utterance);
         } catch (e) {
             console.error("Speech error:", e);
@@ -204,24 +214,30 @@ function calculateRounds() {
     const workSeconds = getSafeNumber(workIntervalInput);
     const restSeconds = getSafeNumber(restIntervalInput);
 
-    if (workSeconds > 0) {
-        const totalWorkoutSeconds = totalMinutes * 60;
-        const cycleSeconds = workSeconds + restSeconds;
-        totalRounds = cycleSeconds > 0 ? Math.floor(totalWorkoutSeconds / cycleSeconds) : 0;
-        if (totalRounds < 1 && totalMinutes > 0) totalRounds = 1;
+    const roundsCountSpan = document.getElementById('rounds-count');
 
-        const roundsCountSpan = document.getElementById('rounds-count');
-        if (roundsCountSpan) roundsCountSpan.textContent = totalRounds;
+    if (workSeconds <= 0) {
+        totalRounds = 0;
+        if (roundsCountSpan) roundsCountSpan.textContent = '0';
+        return;
+    }
+
+    const totalWorkoutSeconds = totalMinutes * 60;
+    const cycleSeconds = workSeconds + restSeconds;
+    
+    if (cycleSeconds > 0) {
+        totalRounds = Math.floor(totalWorkoutSeconds / cycleSeconds);
+        if (totalRounds < 1 && totalMinutes > 0) totalRounds = 1;
     } else {
         totalRounds = 0;
-        const roundsCountSpan = document.getElementById('rounds-count');
-        if (roundsCountSpan) roundsCountSpan.textContent = '0';
     }
+
+    if (roundsCountSpan) roundsCountSpan.textContent = totalRounds;
 }
 
 function formatTime(seconds) {
     const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
+    const s = Math.floor(seconds % 60);
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
@@ -254,25 +270,31 @@ function tick() {
     if (isPaused) return;
 
     const now = Date.now();
-    const elapsed = Math.floor((now - startTime) / 1000);
-    const remaining = phaseDuration - elapsed;
+    const elapsedSincePhaseStart = (now - phaseStartTime) / 1000;
+    const remaining = phaseDuration - elapsedSincePhaseStart;
+    const roundedRemaining = Math.max(0, Math.ceil(remaining));
 
-    if (remaining !== currentIntervalSeconds) {
-        currentIntervalSeconds = Math.max(0, remaining);
+    if (roundedRemaining !== currentIntervalSeconds) {
+        currentIntervalSeconds = roundedRemaining;
         
-        // Voice Announcement for 10 seconds
-        if (currentPhase === 'Work' && currentIntervalSeconds === 10 && lastSpokenSecond !== 10) {
-            announce(translations[currentLanguage].voice10Sec);
-            lastSpokenSecond = 10;
+        // --- LOGIC: Halfway point notification ---
+        if (currentPhase === 'Work' && !halfwayPointTriggered && currentIntervalSeconds <= phaseDuration / 2) {
+            playNotification('half');
+            halfwayPointTriggered = true;
         }
 
-        // Beep sounds for last 3 seconds
-        if (currentIntervalSeconds > 0 && currentIntervalSeconds <= 3 && lastSpokenSecond !== currentIntervalSeconds) {
-            playBeep();
+        // --- LOGIC: Last 3 seconds (New MP3) ---
+        if (currentIntervalSeconds <= 3 && currentIntervalSeconds > 0 && lastSpokenSecond !== currentIntervalSeconds) {
+            playNotification('three');
             lastSpokenSecond = currentIntervalSeconds;
         }
 
-        if (currentIntervalSeconds <= 0) {
+        // Voice Announcement for 10 seconds (Screen Reader support)
+        if (currentPhase === 'Work' && currentIntervalSeconds === 10) {
+            announce(translations[currentLanguage].voice10Sec);
+        }
+
+        if (remaining <= 0) {
             handlePhaseTransition();
         }
         
@@ -283,18 +305,16 @@ function tick() {
 function startTimer() {
     const lang = translations[currentLanguage];
 
-    // Unlock speech for mobile
+    // MOBILE UNLOCK: Open speech and audio channels
     if (synth) {
-        try {
-            const unlock = new SpeechSynthesisUtterance("");
-            synth.speak(unlock);
-        } catch (e) {}
+        synth.cancel();
+        const unlock = new SpeechSynthesisUtterance("");
+        synth.speak(unlock);
     }
 
-    // Recalculate and setup background
     calculateRounds();
     setupMediaSession();
-    audioNode.play().catch(() => {});
+    silentAudioNode.play().catch(() => {});
     requestWakeLock();
 
     if (timerInterval) return;
@@ -309,14 +329,16 @@ function startTimer() {
         currentRound = 1;
         currentPhase = 'Prepare';
         phaseDuration = 5;
-        startTime = Date.now();
+        phaseStartTime = Date.now();
         currentIntervalSeconds = phaseDuration;
         lastSpokenSecond = -1;
+        halfwayPointTriggered = false;
+        
         announce(lang.voicePrepare);
-        // Small hidden toast for Wake Lock
-        console.log(lang.wakeLockActive);
+        // We will trigger 'start' after prepare phase
     } else {
-        startTime = Date.now() - ((phaseDuration - currentIntervalSeconds) * 1000);
+        const alreadyElapsed = phaseDuration - pausedTime;
+        phaseStartTime = Date.now() - (alreadyElapsed * 1000);
     }
 
     isPaused = false;
@@ -330,32 +352,38 @@ function startTimer() {
 function handlePhaseTransition() {
     const lang = translations[currentLanguage];
     lastSpokenSecond = -1;
-    startTime = Date.now();
+    halfwayPointTriggered = false;
+    
+    // Maintain absolute timing alignment
+    phaseStartTime = phaseStartTime + (phaseDuration * 1000);
 
-    setTimeout(() => {
-        if (currentPhase === 'Prepare') {
-            currentPhase = 'Work';
-            phaseDuration = getSafeNumber(workIntervalInput);
-            announce(lang.voiceWorkStart(currentRound));
-        } 
-        else if (currentPhase === 'Work') {
-            if (currentRound < totalRounds) {
-                currentPhase = 'Rest';
-                phaseDuration = getSafeNumber(restIntervalInput);
-                announce(lang.voiceRestStart(phaseDuration));
-            } else {
-                finishWorkout();
-            }
-        } 
-        else if (currentPhase === 'Rest') {
-            currentRound++;
-            currentPhase = 'Work';
-            phaseDuration = getSafeNumber(workIntervalInput);
-            announce(lang.voiceNextRound(currentRound));
+    if (currentPhase === 'Prepare') {
+        currentPhase = 'Work';
+        phaseDuration = getSafeNumber(workIntervalInput);
+        playNotification('start'); // Trigger new professional audio
+        announce(lang.voiceWorkStart(currentRound));
+    } 
+    else if (currentPhase === 'Work') {
+        if (currentRound < totalRounds) {
+            currentPhase = 'Rest';
+            phaseDuration = getSafeNumber(restIntervalInput);
+            playNotification('rest'); // Trigger new professional audio
+            announce(lang.voiceRestStart(phaseDuration));
+        } else {
+            finishWorkout();
+            return;
         }
-        currentIntervalSeconds = phaseDuration;
-        updateDisplay();
-    }, 150);
+    } 
+    else if (currentPhase === 'Rest') {
+        currentRound++;
+        currentPhase = 'Work';
+        phaseDuration = getSafeNumber(workIntervalInput);
+        playNotification('start'); // Trigger for next round
+        announce(lang.voiceNextRound(currentRound));
+    }
+    
+    currentIntervalSeconds = phaseDuration;
+    updateDisplay();
 }
 
 function pauseTimer() {
@@ -363,10 +391,14 @@ function pauseTimer() {
     clearInterval(timerInterval);
     timerInterval = null;
     isPaused = true;
+    
+    const now = Date.now();
+    pausedTime = phaseDuration - ((now - phaseStartTime) / 1000);
+    
     startBtn.disabled = false;
     pauseBtn.disabled = true;
     announce(lang.voicePaused);
-    audioNode.pause();
+    silentAudioNode.pause();
     releaseWakeLock();
 }
 
@@ -384,7 +416,7 @@ function resetTimer() {
     
     updateDisplay();
     announce(lang.voiceReset);
-    audioNode.pause();
+    silentAudioNode.pause();
     releaseWakeLock();
 }
 
@@ -397,7 +429,7 @@ function finishWorkout() {
     announce(lang.voiceFinished);
     startBtn.disabled = false;
     pauseBtn.disabled = true;
-    audioNode.pause();
+    silentAudioNode.pause();
     releaseWakeLock();
 }
 
@@ -412,7 +444,6 @@ function updateLanguage() {
     document.getElementById('settings-title').textContent = lang.settingsTitle;
     document.getElementById('settings-heading').textContent = lang.settingsHeading;
     
-    // Updated chip section headings
     document.getElementById('label-total-time').textContent = lang.totalTime;
     document.getElementById('label-work-interval').textContent = lang.workInterval;
     document.getElementById('label-rest-interval').textContent = lang.restInterval;
@@ -440,7 +471,6 @@ function setupChips() {
 
         chips.forEach(chip => {
             chip.addEventListener('click', () => {
-                // 1. Update visual state
                 chips.forEach(c => {
                     c.classList.remove('selected');
                     c.setAttribute('aria-checked', 'false');
@@ -448,21 +478,14 @@ function setupChips() {
                 chip.classList.add('selected');
                 chip.setAttribute('aria-checked', 'true');
 
-                // 2. Update hidden value
                 hiddenInput.value = chip.dataset.value;
 
-                // 3. Accessibility: Announce selection and re-focus heading
                 const valueText = chip.textContent;
                 const headingText = heading.textContent.split('(')[0].trim();
                 announce(`${headingText}: ${valueText}`);
                 
-                // 4. Haptic Feedback
                 triggerHaptic();
-
-                // 5. Re-focus heading so screen reader confirms the section
                 heading.focus();
-
-                // 6. Recalculate
                 calculateRounds();
             });
         });
