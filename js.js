@@ -103,12 +103,8 @@ let lastSpokenSecond = -1;
 let pausedTime = 0;
 let halfwayPointTriggered = false;
 
-// --- ADVANCED AUDIO POOL (The Fix for Mobile Devices) ---
+// --- ADVANCED AUDIO POOL ---
 
-/**
- * Pre-loading all professional audio assets into memory.
- * This ensures the browser can play them instantly later.
- */
 const audioPool = {
     ar: {
         start: new Audio('sounds/ar/start.mp3'),
@@ -124,73 +120,116 @@ const audioPool = {
     }
 };
 
-// Silent background audio to keep process alive
 const silentAudioNode = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==');
 silentAudioNode.loop = true;
 
 /**
  * SUPER-FIX: Extreme Audio Unlocking for Mobile
- * This version prioritizes the user gesture and handles the "Audio Channel" conflict.
  */
 async function primeAudioEngine() {
-    // 1. Instant speech unlock (High priority)
     if (synth) {
         synth.cancel();
-        const unlock = new SpeechSynthesisUtterance("Audio active");
-        unlock.volume = 0.01; 
+        const unlock = new SpeechSynthesisUtterance(currentLanguage === 'ar' ? "نظام جاهز" : "Audio active");
+        unlock.volume = 0.1; 
         unlock.lang = currentLanguage === 'ar' ? 'ar-SA' : 'en-US';
         synth.speak(unlock);
     }
 
-    // 2. Instant MP3 unlock (Play only the START sound of current lang)
     try {
         const startSound = audioPool[currentLanguage].start;
         await startSound.play();
         startSound.pause();
         startSound.currentTime = 0;
     } catch (e) {
-        console.warn("Direct MP3 unlock failed, will retry on demand", e);
+        console.warn("Direct MP3 unlock failed", e);
     }
 
-    // 3. Keep-alive silent loop
     try {
         await silentAudioNode.play();
     } catch (e) {}
-    
-    announce("System Ready"); // Voice feedback for accessibility
 }
 
-/**
- * Play notification with a small delay to avoid clashing with Speech Synthesis
- */
 function playNotification(soundName) {
     const audio = audioPool[currentLanguage][soundName];
     if (!audio) return;
-
-    // Reset and play
     audio.pause();
     audio.currentTime = 0;
-    
     const playPromise = audio.play();
     if (playPromise !== undefined) {
         playPromise.catch(e => {
-            console.warn(`Playback blocked for ${soundName}. Retrying...`, e);
-            // Fallback: trigger speech if MP3 fails
+            console.warn(`Playback blocked for ${soundName}`, e);
             if (soundName === 'start') announce(translations[currentLanguage].work);
         });
     }
 }
 
+function triggerHaptic() {
+    if ("vibrate" in navigator) {
+        navigator.vibrate(50);
+    }
+}
+
+function setupMediaSession() {
+    if ('mediaSession' in navigator && window.MediaMetadata) {
+        try {
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: 'AudioAthlete',
+                artist: translations[currentLanguage].appTitle,
+                album: translations[currentLanguage].appDesc
+            });
+            navigator.mediaSession.setActionHandler('play', startTimer);
+            navigator.mediaSession.setActionHandler('pause', pauseTimer);
+        } catch (e) {
+            console.error("MediaSession error:", e);
+        }
+    }
+}
+
+// --- CORE UTILS ---
+
+function convertArabicDigits(str) {
+    if (typeof str !== 'string') str = String(str);
+    return str.replace(/[٠-٩]/g, (d) => d.charCodeAt(0) - 1632)
+              .replace(/[۰-۹]/g, (d) => d.charCodeAt(0) - 1776);
+}
+
+function getSafeNumber(input) {
+    let val = convertArabicDigits(input.value);
+    let num = Number(val);
+    if (isNaN(num) || num < 0) return 0;
+    return num;
+}
+
+// --- SCREEN WAKE LOCK ---
+async function requestWakeLock() {
+    if ('wakeLock' in navigator) {
+        try {
+            wakeLock = await navigator.wakeLock.request('screen');
+        } catch (err) {}
+    }
+}
+
+function releaseWakeLock() {
+    if (wakeLock !== null) {
+        wakeLock.release().then(() => wakeLock = null);
+    }
+}
+
+document.addEventListener('visibilitychange', async () => {
+    if (wakeLock !== null && document.visibilityState === 'visible') {
+        await requestWakeLock();
+    }
+});
+
+// --- ANNOUNCEMENT LOGIC ---
+
 function announce(text) {
     if (!text) return;
-    
-    // Update ARIA region for screen readers (NVDA/TalkBack)
     announcementRegion.textContent = '';
     setTimeout(() => {
         announcementRegion.textContent = text;
     }, 50);
 
-    // Speech Synthesis with safety delay
     if (synth) {
         setTimeout(() => {
             synth.cancel();
@@ -198,14 +237,103 @@ function announce(text) {
             utterance.lang = currentLanguage === 'ar' ? 'ar-SA' : 'en-US';
             utterance.rate = 1.0;
             synth.speak(utterance);
-        }, 150); // The "Magic Delay" to prevent channel clashing
+        }, 150); 
+    }
+}
+
+// --- TIMER LOGIC ---
+
+function calculateRounds() {
+    const totalMinutes = getSafeNumber(totalTimeInput);
+    const workSeconds = getSafeNumber(workIntervalInput);
+    const restSeconds = getSafeNumber(restIntervalInput);
+    const roundsCountSpan = document.getElementById('rounds-count');
+
+    if (workSeconds <= 0) {
+        totalRounds = 0;
+        if (roundsCountSpan) roundsCountSpan.textContent = '0';
+        return;
+    }
+
+    const totalWorkoutSeconds = totalMinutes * 60;
+    const cycleSeconds = workSeconds + restSeconds;
+    
+    if (cycleSeconds > 0) {
+        totalRounds = Math.floor(totalWorkoutSeconds / cycleSeconds);
+        if (totalRounds < 1 && totalMinutes > 0) totalRounds = 1;
+    } else {
+        totalRounds = 0;
+    }
+
+    if (roundsCountSpan) roundsCountSpan.textContent = totalRounds;
+}
+
+function formatTime(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+function updateDisplay() {
+    const lang = translations[currentLanguage];
+    timerNumbersDisplay.textContent = formatTime(currentIntervalSeconds);
+    currentRoundDisplay.textContent = `${lang.roundLabel}${currentRound} / ${totalRounds}`;
+    
+    let displayPhase = lang.ready;
+    if (currentPhase === 'Prepare') displayPhase = lang.prepare;
+    if (currentPhase === 'Work') displayPhase = lang.work;
+    if (currentPhase === 'Rest') displayPhase = lang.rest;
+    if (currentPhase === 'Finished') displayPhase = lang.finished;
+    
+    currentPhaseDisplay.textContent = displayPhase;
+
+    if (currentPhase === 'Work') {
+        currentPhaseDisplay.style.color = 'var(--primary-color)';
+        timerNumbersDisplay.style.color = 'var(--primary-color)';
+    } else if (currentPhase === 'Rest') {
+        currentPhaseDisplay.style.color = 'var(--secondary-color)';
+        timerNumbersDisplay.style.color = 'var(--secondary-color)';
+    } else {
+        currentPhaseDisplay.style.color = 'var(--accent-blue)';
+        timerNumbersDisplay.style.color = 'var(--text-main)';
+    }
+}
+
+function tick() {
+    if (isPaused) return;
+
+    const now = Date.now();
+    const elapsedSincePhaseStart = (now - phaseStartTime) / 1000;
+    const remaining = phaseDuration - elapsedSincePhaseStart;
+    const roundedRemaining = Math.max(0, Math.ceil(remaining));
+
+    if (roundedRemaining !== currentIntervalSeconds) {
+        currentIntervalSeconds = roundedRemaining;
+        
+        if (currentPhase === 'Work' && !halfwayPointTriggered && currentIntervalSeconds <= phaseDuration / 2) {
+            playNotification('half');
+            halfwayPointTriggered = true;
+        }
+
+        if (currentIntervalSeconds <= 3 && currentIntervalSeconds > 0 && lastSpokenSecond !== currentIntervalSeconds) {
+            playNotification('three');
+            lastSpokenSecond = currentIntervalSeconds;
+        }
+
+        if (currentPhase === 'Work' && currentIntervalSeconds === 10) {
+            announce(translations[currentLanguage].voice10Sec);
+        }
+
+        if (remaining <= 0) {
+            handlePhaseTransition();
+        }
+        
+        updateDisplay();
     }
 }
 
 function startTimer() {
-    // IMMEDIATE ACTION: Unlock audio before ANY other logic
     primeAudioEngine();
-
     const lang = translations[currentLanguage];
     calculateRounds();
     setupMediaSession();
@@ -219,7 +347,6 @@ function startTimer() {
             announce(lang.alertSettings);
             return;
         }
-        
         currentRound = 1;
         currentPhase = 'Prepare';
         phaseDuration = 5;
@@ -227,8 +354,6 @@ function startTimer() {
         currentIntervalSeconds = phaseDuration;
         lastSpokenSecond = -1;
         halfwayPointTriggered = false;
-        
-        // Let the system breathe before the first big announcement
         setTimeout(() => announce(lang.voicePrepare), 500);
     } else {
         const alreadyElapsed = phaseDuration - pausedTime;
@@ -238,17 +363,14 @@ function startTimer() {
     isPaused = false;
     startBtn.disabled = true;
     pauseBtn.disabled = false;
-    
     timerInterval = setInterval(tick, 100);
     updateDisplay();
 }
-
 
 function handlePhaseTransition() {
     const lang = translations[currentLanguage];
     lastSpokenSecond = -1;
     halfwayPointTriggered = false;
-    
     phaseStartTime = phaseStartTime + (phaseDuration * 1000);
 
     if (currentPhase === 'Prepare') {
@@ -285,10 +407,8 @@ function pauseTimer() {
     clearInterval(timerInterval);
     timerInterval = null;
     isPaused = true;
-    
     const now = Date.now();
     pausedTime = phaseDuration - ((now - phaseStartTime) / 1000);
-    
     startBtn.disabled = false;
     pauseBtn.disabled = true;
     announce(lang.voicePaused);
@@ -304,10 +424,8 @@ function resetTimer() {
     currentRound = 0;
     currentPhase = 'Ready';
     currentIntervalSeconds = 0;
-    
     startBtn.disabled = false;
     pauseBtn.disabled = true;
-    
     updateDisplay();
     announce(lang.voiceReset);
     silentAudioNode.pause();
@@ -327,42 +445,33 @@ function finishWorkout() {
     releaseWakeLock();
 }
 
-// UI Setup & Translations
 function updateLanguage() {
     const lang = translations[currentLanguage];
     document.documentElement.lang = currentLanguage;
     document.documentElement.dir = lang.dir;
-    
     document.getElementById('app-title').textContent = lang.appTitle;
     document.getElementById('app-description').textContent = lang.appDesc;
     document.getElementById('settings-title').textContent = lang.settingsTitle;
     document.getElementById('settings-heading').textContent = lang.settingsHeading;
-    
     document.getElementById('label-total-time').textContent = lang.totalTime;
     document.getElementById('label-work-interval').textContent = lang.workInterval;
     document.getElementById('label-rest-interval').textContent = lang.restInterval;
-    
     startBtn.textContent = lang.startBtn;
     pauseBtn.textContent = lang.pauseBtn;
     resetBtn.textContent = lang.resetBtn;
-    
     settingsToggle.setAttribute('aria-label', lang.settingsLabel);
     closeSettings.setAttribute('aria-label', lang.closeSettingsLabel);
-    
     calculateRounds();
     updateDisplay();
 }
 
-// CHIP SELECTION LOGIC
 function setupChips() {
     const chipGroups = document.querySelectorAll('.chip-group');
-    
     chipGroups.forEach(group => {
         const chips = group.querySelectorAll('.chip');
         const hiddenInputId = group.getAttribute('aria-labelledby').replace('label-', '');
         const hiddenInput = document.getElementById(hiddenInputId);
         const heading = document.getElementById(group.getAttribute('aria-labelledby'));
-
         chips.forEach(chip => {
             chip.addEventListener('click', () => {
                 chips.forEach(c => {
@@ -371,13 +480,10 @@ function setupChips() {
                 });
                 chip.classList.add('selected');
                 chip.setAttribute('aria-checked', 'true');
-
                 hiddenInput.value = chip.dataset.value;
-
                 const valueText = chip.textContent;
                 const headingText = heading.textContent.split('(')[0].trim();
                 announce(`${headingText}: ${valueText}`);
-                
                 triggerHaptic();
                 heading.focus();
                 calculateRounds();
@@ -405,11 +511,9 @@ startBtn.addEventListener('click', startTimer);
 pauseBtn.addEventListener('click', pauseTimer);
 resetBtn.addEventListener('click', resetTimer);
 
-// Initial Load
 updateLanguage();
 setupChips();
 
-// SERVICE WORKER REGISTRATION
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
