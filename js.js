@@ -513,7 +513,15 @@ resetBtn.addEventListener('click', resetTimer);
 
 updateLanguage();
 setupChips();
+// PWA Install Logic
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    console.log('PWA prompt ready');
+});
 
+// SERVICE WORKER REGISTRATION
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
@@ -521,3 +529,4 @@ if ('serviceWorker' in navigator) {
             .catch(err => console.log('PWA Service Worker failed', err));
     });
 }
+
