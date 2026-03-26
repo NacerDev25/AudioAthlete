@@ -1,0 +1,17 @@
+{
+  "name": "AudioAthlete",
+  "short_name": "Athlete",
+  "description": "Smart audio-guided workout timer with high accessibility support.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#22c55e",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

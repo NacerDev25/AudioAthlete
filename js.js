@@ -129,235 +129,84 @@ const silentAudioNode = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBA
 silentAudioNode.loop = true;
 
 /**
- * PROFESSIONAL FIX: Prime the Audio Engine.
- * Mobile browsers block audio UNLESS the specific sound object has been
- * played/interacted with during a USER click event.
+ * SUPER-FIX: Extreme Audio Unlocking for Mobile
+ * This version prioritizes the user gesture and handles the "Audio Channel" conflict.
  */
 async function primeAudioEngine() {
-    // 1. Prime Speech Synthesis
+    // 1. Instant speech unlock (High priority)
     if (synth) {
         synth.cancel();
-        const unlock = new SpeechSynthesisUtterance(" ");
-        unlock.volume = 0; // Silent but active
+        const unlock = new SpeechSynthesisUtterance("Audio active");
+        unlock.volume = 0.01; 
+        unlock.lang = currentLanguage === 'ar' ? 'ar-SA' : 'en-US';
         synth.speak(unlock);
     }
 
-    // 2. Prime all MP3 files sequentially to avoid blocking
-    // We only prime the current language to be efficient on mobile
-    const langPool = audioPool[currentLanguage];
-    for (const audio of Object.values(langPool)) {
-        try {
-            await audio.play();
-            audio.pause();
-            audio.currentTime = 0;
-        } catch (e) {
-            console.warn("Audio priming delayed or blocked", e);
-        }
+    // 2. Instant MP3 unlock (Play only the START sound of current lang)
+    try {
+        const startSound = audioPool[currentLanguage].start;
+        await startSound.play();
+        startSound.pause();
+        startSound.currentTime = 0;
+    } catch (e) {
+        console.warn("Direct MP3 unlock failed, will retry on demand", e);
     }
 
-    // 3. Prime silent background loop
+    // 3. Keep-alive silent loop
     try {
         await silentAudioNode.play();
     } catch (e) {}
+    
+    announce("System Ready"); // Voice feedback for accessibility
 }
 
 /**
- * Play from the pre-loaded pool for instant, unblocked response.
+ * Play notification with a small delay to avoid clashing with Speech Synthesis
  */
 function playNotification(soundName) {
-    try {
-        const audio = audioPool[currentLanguage][soundName];
-        if (audio) {
-            audio.currentTime = 0; // Rewind to start
-            audio.play().catch(e => console.warn(`Pool play blocked: ${soundName}`, e));
-        }
-    } catch (e) {
-        console.error("Audio pool error:", e);
+    const audio = audioPool[currentLanguage][soundName];
+    if (!audio) return;
+
+    // Reset and play
+    audio.pause();
+    audio.currentTime = 0;
+    
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+        playPromise.catch(e => {
+            console.warn(`Playback blocked for ${soundName}. Retrying...`, e);
+            // Fallback: trigger speech if MP3 fails
+            if (soundName === 'start') announce(translations[currentLanguage].work);
+        });
     }
 }
-
-function triggerHaptic() {
-    if ("vibrate" in navigator) {
-        navigator.vibrate(50);
-    }
-}
-
-function setupMediaSession() {
-    if ('mediaSession' in navigator && window.MediaMetadata) {
-        try {
-            navigator.mediaSession.metadata = new MediaMetadata({
-                title: 'AudioAthlete',
-                artist: translations[currentLanguage].appTitle,
-                album: translations[currentLanguage].appDesc
-            });
-            navigator.mediaSession.setActionHandler('play', startTimer);
-            navigator.mediaSession.setActionHandler('pause', pauseTimer);
-        } catch (e) {
-            console.error("MediaSession error:", e);
-        }
-    }
-}
-
-// --- CORE UTILS ---
-
-function convertArabicDigits(str) {
-    if (typeof str !== 'string') str = String(str);
-    return str.replace(/[٠-٩]/g, (d) => d.charCodeAt(0) - 1632)
-              .replace(/[۰-۹]/g, (d) => d.charCodeAt(0) - 1776);
-}
-
-function getSafeNumber(input) {
-    let val = convertArabicDigits(input.value);
-    let num = Number(val);
-    if (isNaN(num) || num < 0) return 0;
-    return num;
-}
-
-// --- SCREEN WAKE LOCK ---
-async function requestWakeLock() {
-    if ('wakeLock' in navigator) {
-        try {
-            wakeLock = await navigator.wakeLock.request('screen');
-        } catch (err) {}
-    }
-}
-
-function releaseWakeLock() {
-    if (wakeLock !== null) {
-        wakeLock.release().then(() => wakeLock = null);
-    }
-}
-
-document.addEventListener('visibilitychange', async () => {
-    if (wakeLock !== null && document.visibilityState === 'visible') {
-        await requestWakeLock();
-    }
-});
-
-// --- ANNOUNCEMENT LOGIC (TalkBack Friendly) ---
 
 function announce(text) {
     if (!text) return;
     
+    // Update ARIA region for screen readers (NVDA/TalkBack)
     announcementRegion.textContent = '';
     setTimeout(() => {
         announcementRegion.textContent = text;
     }, 50);
 
+    // Speech Synthesis with safety delay
     if (synth) {
-        synth.cancel();
-        try {
+        setTimeout(() => {
+            synth.cancel();
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = currentLanguage === 'ar' ? 'ar-SA' : 'en-US';
-            utterance.rate = 1.1; 
+            utterance.rate = 1.0;
             synth.speak(utterance);
-        } catch (e) {
-            console.error("Speech error:", e);
-        }
-    }
-}
-
-// --- TIMER LOGIC ---
-
-function calculateRounds() {
-    const totalMinutes = getSafeNumber(totalTimeInput);
-    const workSeconds = getSafeNumber(workIntervalInput);
-    const restSeconds = getSafeNumber(restIntervalInput);
-
-    const roundsCountSpan = document.getElementById('rounds-count');
-
-    if (workSeconds <= 0) {
-        totalRounds = 0;
-        if (roundsCountSpan) roundsCountSpan.textContent = '0';
-        return;
-    }
-
-    const totalWorkoutSeconds = totalMinutes * 60;
-    const cycleSeconds = workSeconds + restSeconds;
-    
-    if (cycleSeconds > 0) {
-        totalRounds = Math.floor(totalWorkoutSeconds / cycleSeconds);
-        if (totalRounds < 1 && totalMinutes > 0) totalRounds = 1;
-    } else {
-        totalRounds = 0;
-    }
-
-    if (roundsCountSpan) roundsCountSpan.textContent = totalRounds;
-}
-
-function formatTime(seconds) {
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-}
-
-function updateDisplay() {
-    const lang = translations[currentLanguage];
-    timerNumbersDisplay.textContent = formatTime(currentIntervalSeconds);
-    currentRoundDisplay.textContent = `${lang.roundLabel}${currentRound} / ${totalRounds}`;
-    
-    let displayPhase = lang.ready;
-    if (currentPhase === 'Prepare') displayPhase = lang.prepare;
-    if (currentPhase === 'Work') displayPhase = lang.work;
-    if (currentPhase === 'Rest') displayPhase = lang.rest;
-    if (currentPhase === 'Finished') displayPhase = lang.finished;
-    
-    currentPhaseDisplay.textContent = displayPhase;
-
-    if (currentPhase === 'Work') {
-        currentPhaseDisplay.style.color = 'var(--primary-color)';
-        timerNumbersDisplay.style.color = 'var(--primary-color)';
-    } else if (currentPhase === 'Rest') {
-        currentPhaseDisplay.style.color = 'var(--secondary-color)';
-        timerNumbersDisplay.style.color = 'var(--secondary-color)';
-    } else {
-        currentPhaseDisplay.style.color = 'var(--accent-blue)';
-        timerNumbersDisplay.style.color = 'var(--text-main)';
-    }
-}
-
-function tick() {
-    if (isPaused) return;
-
-    const now = Date.now();
-    const elapsedSincePhaseStart = (now - phaseStartTime) / 1000;
-    const remaining = phaseDuration - elapsedSincePhaseStart;
-    const roundedRemaining = Math.max(0, Math.ceil(remaining));
-
-    if (roundedRemaining !== currentIntervalSeconds) {
-        currentIntervalSeconds = roundedRemaining;
-        
-        // Halfway point check
-        if (currentPhase === 'Work' && !halfwayPointTriggered && currentIntervalSeconds <= phaseDuration / 2) {
-            playNotification('half');
-            halfwayPointTriggered = true;
-        }
-
-        // Last 3 seconds check
-        if (currentIntervalSeconds <= 3 && currentIntervalSeconds > 0 && lastSpokenSecond !== currentIntervalSeconds) {
-            playNotification('three');
-            lastSpokenSecond = currentIntervalSeconds;
-        }
-
-        // TalkBack support for 10 seconds
-        if (currentPhase === 'Work' && currentIntervalSeconds === 10) {
-            announce(translations[currentLanguage].voice10Sec);
-        }
-
-        if (remaining <= 0) {
-            handlePhaseTransition();
-        }
-        
-        updateDisplay();
+        }, 150); // The "Magic Delay" to prevent channel clashing
     }
 }
 
 function startTimer() {
-    const lang = translations[currentLanguage];
-
-    // CRITICAL: Unlock all audio and speech engines on first user click
+    // IMMEDIATE ACTION: Unlock audio before ANY other logic
     primeAudioEngine();
 
+    const lang = translations[currentLanguage];
     calculateRounds();
     setupMediaSession();
     requestWakeLock();
@@ -379,7 +228,8 @@ function startTimer() {
         lastSpokenSecond = -1;
         halfwayPointTriggered = false;
         
-        announce(lang.voicePrepare);
+        // Let the system breathe before the first big announcement
+        setTimeout(() => announce(lang.voicePrepare), 500);
     } else {
         const alreadyElapsed = phaseDuration - pausedTime;
         phaseStartTime = Date.now() - (alreadyElapsed * 1000);
@@ -392,6 +242,7 @@ function startTimer() {
     timerInterval = setInterval(tick, 100);
     updateDisplay();
 }
+
 
 function handlePhaseTransition() {
     const lang = translations[currentLanguage];
@@ -557,3 +408,12 @@ resetBtn.addEventListener('click', resetTimer);
 // Initial Load
 updateLanguage();
 setupChips();
+
+// SERVICE WORKER REGISTRATION
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+            .then(reg => console.log('PWA Service Worker registered'))
+            .catch(err => console.log('PWA Service Worker failed', err));
+    });
+}
