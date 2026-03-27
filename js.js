@@ -107,16 +107,16 @@ let halfwayPointTriggered = false;
 
 const audioPool = {
     ar: {
-        start: new Audio('sounds/ar/start.mp3'),
-        half: new Audio('sounds/ar/half.mp3'),
-        three: new Audio('sounds/ar/three.mp3'),
-        rest: new Audio('sounds/ar/rest.mp3')
+        start: new Audio('ar_start.mp3'),
+        half: new Audio('ar_half.mp3'),
+        three: new Audio('ar_three.mp3'),
+        rest: new Audio('ar_rest.mp3')
     },
     en: {
-        start: new Audio('sounds/en/start.mp3'),
-        half: new Audio('sounds/en/half.mp3'),
-        three: new Audio('sounds/en/three.mp3'),
-        rest: new Audio('sounds/en/rest.mp3')
+        start: new Audio('en_start.mp3'),
+        half: new Audio('en_half.mp3'),
+        three: new Audio('en_three.mp3'),
+        rest: new Audio('en_rest.mp3')
     }
 };
 
@@ -125,6 +125,7 @@ silentAudioNode.loop = true;
 
 /**
  * SUPER-FIX: Extreme Audio Unlocking for Mobile
+ * This function plays all sounds briefly and silences them to bypass mobile browser restrictions.
  */
 async function primeAudioEngine() {
     if (synth) {
@@ -135,13 +136,19 @@ async function primeAudioEngine() {
         synth.speak(unlock);
     }
 
-    try {
-        const startSound = audioPool[currentLanguage].start;
-        await startSound.play();
-        startSound.pause();
-        startSound.currentTime = 0;
-    } catch (e) {
-        console.warn("Direct MP3 unlock failed", e);
+    // Unlock all audio files in the pool for the current language
+    const currentPool = audioPool[currentLanguage];
+    for (const key in currentPool) {
+        try {
+            const sound = currentPool[key];
+            sound.muted = true; // Mute first to be safe
+            await sound.play();
+            sound.pause();
+            sound.currentTime = 0;
+            sound.muted = false; // Unmute for later use
+        } catch (e) {
+            console.warn(`Initial unlock failed for ${key}`, e);
+        }
     }
 
     try {

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'audio-athlete-v1';
+const CACHE_NAME = 'audio-athlete-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -8,14 +8,14 @@ const ASSETS = [
   './icon.svg',
   './icon-192.png',
   './icon-512.png',
-  './sounds/ar/start.mp3',
-  './sounds/ar/half.mp3',
-  './sounds/ar/three.mp3',
-  './sounds/ar/rest.mp3',
-  './sounds/en/start.mp3',
-  './sounds/en/half.mp3',
-  './sounds/en/three.mp3',
-  './sounds/en/rest.mp3'
+  './ar_start.mp3',
+  './ar_half.mp3',
+  './ar_three.mp3',
+  './ar_rest.mp3',
+  './en_start.mp3',
+  './en_half.mp3',
+  './en_three.mp3',
+  './en_rest.mp3'
 ];
 
 // Install Event - Caching Assets
