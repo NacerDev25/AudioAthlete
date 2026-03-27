@@ -483,8 +483,8 @@ function setupChips() {
                 hiddenInput.value = chip.dataset.value;
                 const valueText = chip.textContent;
                 const headingText = heading.textContent.split('(')[0].trim();
-                announce(`${headingText}: ${valueText}`);
                 triggerHaptic();
+                announce(`${headingText}: ${valueText}`);
                 heading.focus();
                 calculateRounds();
             });
