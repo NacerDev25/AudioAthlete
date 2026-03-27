@@ -33,7 +33,10 @@ const translations = {
         voiceFinished: 'Workout complete. Well done!',
         wakeLockActive: 'Screen will stay on during workout.',
         settingsLabel: 'Settings',
-        closeSettingsLabel: 'Close Settings'
+        closeSettingsLabel: 'Close Settings',
+        installBtn: 'Install App on Home Screen',
+        installToast: 'Tip: You can install this app from settings for offline use.',
+        installSuccess: 'Thank you for installing AudioAthlete!'
     },
     ar: {
         dir: 'rtl',
@@ -65,7 +68,10 @@ const translations = {
         voiceFinished: 'تهانينا! اكتمل التمرين.',
         wakeLockActive: 'ستبقى الشاشة مفعلة طوال فترة التمرين.',
         settingsLabel: 'الإعدادات',
-        closeSettingsLabel: 'إغلاق الإعدادات'
+        closeSettingsLabel: 'إغلاق الإعدادات',
+        installBtn: 'تثبيت التطبيق على الشاشة الرئيسية',
+        installToast: 'تلميح: يمكنك تثبيت التطبيق من الإعدادات لاستخدامه بدون إنترنت.',
+        installSuccess: 'شكراً لتثبيتك أوديو أثليت!'
     }
 };
 
@@ -468,6 +474,13 @@ function updateLanguage() {
     resetBtn.textContent = lang.resetBtn;
     settingsToggle.setAttribute('aria-label', lang.settingsLabel);
     closeSettings.setAttribute('aria-label', lang.closeSettingsLabel);
+    
+    // Update PWA elements
+    const installBtn = document.getElementById('install-button');
+    if (installBtn) installBtn.textContent = lang.installBtn;
+    const toastMsg = document.getElementById('toast-msg');
+    if (toastMsg) toastMsg.textContent = lang.installToast;
+
     calculateRounds();
     updateDisplay();
 }
@@ -522,11 +535,72 @@ updateLanguage();
 setupChips();
 // PWA Install Logic
 let deferredPrompt;
+const installSection = document.getElementById('install-section');
+const installBtn = document.getElementById('install-button');
+const pwaToast = document.getElementById('pwa-toast');
+
+// Check if app is already running in standalone mode (installed)
+const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+
+if (isStandalone) {
+    if (installSection) installSection.style.display = 'none';
+}
+
 window.addEventListener('beforeinstallprompt', (e) => {
+    // Prevent the mini-infobar from appearing on mobile
     e.preventDefault();
+    // Stash the event so it can be triggered later.
     deferredPrompt = e;
-    console.log('PWA prompt ready');
+    
+    // Update UI to notify the user they can install the PWA
+    if (installSection && !isStandalone) {
+        installSection.style.display = 'block';
+    }
+
+    // Show a gentle toast notification for new users
+    showInstallToast();
 });
+
+if (installBtn) {
+    installBtn.addEventListener('click', async () => {
+        if (!deferredPrompt) return;
+        
+        // Show the install prompt
+        deferredPrompt.prompt();
+        
+        // Wait for the user to respond to the prompt
+        const { outcome } = await deferredPrompt.userChoice;
+        console.log(`User response to install prompt: ${outcome}`);
+        
+        // We've used the prompt, and can't use it again, throw it away
+        deferredPrompt = null;
+        
+        // Hide the install section if they accepted
+        if (outcome === 'accepted') {
+            if (installSection) installSection.style.display = 'none';
+        }
+    });
+}
+
+window.addEventListener('appinstalled', (event) => {
+    console.log('AudioAthlete was installed.');
+    if (installSection) installSection.style.display = 'none';
+    announce(translations[currentLanguage].installSuccess);
+});
+
+function showInstallToast() {
+    // Only show the toast if it hasn't been shown in this session or for new users
+    if (!localStorage.getItem('pwa_toast_shown') && pwaToast) {
+        setTimeout(() => {
+            pwaToast.classList.add('show');
+            // Hide after 5 seconds
+            setTimeout(() => {
+                pwaToast.classList.remove('show');
+                localStorage.setItem('pwa_toast_shown', 'true');
+            }, 5000);
+        }, 2000); // Wait 2 seconds before showing the toast
+    }
+}
 
 // SERVICE WORKER REGISTRATION
 if ('serviceWorker' in navigator) {

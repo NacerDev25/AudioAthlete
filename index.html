@@ -37,7 +37,13 @@
                             <option value="ar">العربية</option>
                         </select>
                     </div>
-                    <!-- Future settings will go here -->
+                    
+                    <!-- PWA Install Section -->
+                    <div id="install-section" class="input-group" style="display: none; margin-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1.5rem;">
+                        <button id="install-button" class="btn btn-install" style="width: 100%; background-color: var(--accent-blue); color: var(--bg-color);">
+                            Install App on Home Screen
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -113,6 +119,13 @@
 
         <!-- Hidden area for screen reader announcements only -->
         <div id="announcement-region" class="sr-only" aria-live="assertive"></div>
+    </div>
+
+    <!-- PWA Toast Notification -->
+    <div id="pwa-toast" class="toast-container" role="alert" aria-live="polite">
+        <div class="toast-content">
+            <span id="toast-msg">You can install this app from settings.</span>
+        </div>
     </div>
 
     <script src="js.js"></script>

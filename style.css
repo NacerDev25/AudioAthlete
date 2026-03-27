@@ -320,6 +320,43 @@ header {
     color: var(--text-main);
 }
 
+/* PWA Install Button Style */
+.btn-install {
+    font-size: 0.9rem;
+    padding: 12px;
+    border-radius: 12px;
+    margin-top: 10px;
+    box-shadow: 0 4px 12px rgba(56, 189, 248, 0.2);
+}
+
+.btn-install:hover {
+    filter: brightness(1.1);
+    transform: translateY(-2px);
+}
+
+/* Toast Notification Styling */
+.toast-container {
+    position: fixed;
+    bottom: -100px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 90%;
+    max-width: 400px;
+    background: var(--accent-blue);
+    color: var(--bg-color);
+    padding: 16px;
+    border-radius: 16px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+    z-index: 2000;
+    transition: bottom 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    font-weight: 600;
+    text-align: center;
+}
+
+.toast-container.show {
+    bottom: 24px;
+}
+
 .sr-only {
     position: absolute;
     width: 1px;
