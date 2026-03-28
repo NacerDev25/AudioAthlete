@@ -1,1 +1,4 @@
 node_modules/
+package-lock.json
+make_assets.js
+ملف شرح المشروع.txt
