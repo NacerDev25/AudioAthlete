@@ -1,21 +1,20 @@
 const CACHE_NAME = 'audioathlete-v3';
 const ASSETS_TO_CACHE = [
-  './',
-  './index.html',
-  './style.css',
-  './js.js',
-  './manifest.json',
-  './icon-192.png',
-  './icon-512.png',
-  './icon.svg',
-  './ar_start.mp3',
-  './ar_half.mp3',
-  './ar_three.mp3',
-  './ar_rest.mp3',
-  './en_start.mp3',
-  './en_half.mp3',
-  './en_three.mp3',
-  './en_rest.mp3'
+  'index.html',
+  'style.css',
+  'js.js',
+  'manifest.json',
+  'icon-192.png',
+  'icon-512.png',
+  'icon.svg',
+  'ar_start.mp3',
+  'ar_half.mp3',
+  'ar_three.mp3',
+  'ar_rest.mp3',
+  'en_start.mp3',
+  'en_half.mp3',
+  'en_three.mp3',
+  'en_rest.mp3'
 ];
 
 // Install event: cache all essential assets
