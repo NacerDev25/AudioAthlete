@@ -512,14 +512,70 @@ function setupChips() {
     });
 }
 
-settingsToggle.addEventListener('click', () => {
+// --- FOCUS TRAP FOR MODAL ---
+let lastFocusedElement = null;
+
+function getFocusableElements(container) {
+    return Array.from(container.querySelectorAll(
+        'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    ));
+}
+
+function trapFocus(event) {
+    const focusableElements = getFocusableElements(settingsModal);
+    if (focusableElements.length === 0) return;
+    const firstFocusable = focusableElements[0];
+    const lastFocusable = focusableElements[focusableElements.length - 1];
+
+    if (event.key === 'Tab') {
+        if (event.shiftKey) {
+            if (document.activeElement === firstFocusable) {
+                event.preventDefault();
+                lastFocusable.focus();
+            }
+        } else {
+            if (document.activeElement === lastFocusable) {
+                event.preventDefault();
+                firstFocusable.focus();
+            }
+        }
+    }
+}
+
+function openModal() {
+    lastFocusedElement = document.activeElement;
     settingsModal.classList.add('active');
     settingsModal.setAttribute('aria-hidden', 'false');
-});
+    document.body.classList.add('no-scroll');
+    document.addEventListener('keydown', trapFocus);
+    const focusableElements = getFocusableElements(settingsModal);
+    if (focusableElements.length > 0) {
+        setTimeout(() => focusableElements[0].focus(), 100);
+    }
+}
 
-closeSettings.addEventListener('click', () => {
+function closeModal() {
     settingsModal.classList.remove('active');
     settingsModal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('no-scroll');
+    document.removeEventListener('keydown', trapFocus);
+    if (lastFocusedElement) {
+        lastFocusedElement.focus();
+    }
+}
+
+settingsToggle.addEventListener('click', openModal);
+
+closeSettings.addEventListener('click', closeModal);
+
+settingsModal.addEventListener('click', (e) => {
+    if (e.target === settingsModal) closeModal();
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && settingsModal.classList.contains('active')) {
+        closeModal();
+    }
 });
 
 languageSelect.addEventListener('change', (e) => {

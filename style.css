@@ -15,6 +15,7 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -26,12 +27,16 @@ body {
     align-items: center;
     min-height: 100vh;
     margin: 0;
-    padding: 16px; /* Safe padding for small screens */
+    padding: 16px;
+}
+
+body.no-scroll {
+    overflow: hidden;
 }
 
 .container {
     width: 100%;
-    max-width: 450px; /* Standard mobile width */
+    max-width: 450px;
     background-color: var(--card-bg);
     padding: 1.5rem;
     border-radius: var(--border-radius);
@@ -83,7 +88,7 @@ header {
 
 /* Modal Styling */
 .modal {
-    display: none; /* Hidden by default */
+    display: none;
     position: fixed;
     z-index: 1000;
     left: 0;
@@ -94,8 +99,7 @@ header {
     backdrop-filter: blur(8px);
     justify-content: center;
     align-items: center;
-    padding: 20px;
-    transition: var(--transition);
+    padding: env(safe-area-inset-top, 20px) env(safe-area-inset-right, 20px) env(safe-area-inset-bottom, 20px) env(safe-area-inset-left, 20px);
 }
 
 .modal.active {
@@ -110,6 +114,8 @@ header {
     border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
     animation: modalAppear 0.3s ease-out;
+    max-height: 90vh;
+    overflow-y: auto;
 }
 
 @keyframes modalAppear {
@@ -138,6 +144,11 @@ header {
     cursor: pointer;
     line-height: 1;
     transition: var(--transition);
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .btn-close:hover {
@@ -150,6 +161,30 @@ header {
 
 .modal-body .input-group {
     margin-bottom: 0;
+}
+
+#language-select {
+    width: 100%;
+    padding: 12px 14px;
+    background: var(--bg-color);
+    color: var(--text-main);
+    border: 1px solid #334155;
+    border-radius: 12px;
+    font-size: 1rem;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+/* Focus styles for keyboard users */
+:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 2px;
+}
+
+button:focus:not(:focus-visible) {
+    outline: none;
 }
 
 #app-description {
@@ -197,15 +232,18 @@ header {
     background: var(--bg-color);
     border: 1px solid #334155;
     color: var(--text-main);
-    padding: 8px 14px;
-    border-radius: 12px;
+    padding: 12px 16px;
+    border-radius: 14px;
     font-size: 0.9rem;
     font-weight: 600;
     cursor: pointer;
     transition: var(--transition);
-    min-width: 50px;
+    min-width: 52px;
+    min-height: 44px;
     flex: 1 0 auto;
     text-align: center;
+    touch-action: manipulation;
+    user-select: none;
 }
 
 .chip:hover {
@@ -286,6 +324,9 @@ header {
     display: flex;
     align-items: center;
     justify-content: center;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .btn:active {
@@ -354,7 +395,7 @@ header {
 }
 
 .toast-container.show {
-    bottom: 24px;
+    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
 }
 
 .sr-only {
@@ -369,15 +410,99 @@ header {
     border-width: 0;
 }
 
-/* Small Screens Adjustments */
-@media (max-width: 380px) {
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+@media (max-width: 480px) {
     .container {
-        padding: 1rem;
+        padding: 1.2rem;
+        border-radius: 16px;
     }
     #app-title {
         font-size: 1.8rem;
     }
     .countdown-box {
-        font-size: 3.8rem;
+        font-size: clamp(3.2rem, 16vw, 4.5rem);
+        padding: 1rem 0.5rem;
+    }
+    .phase-label {
+        font-size: 1.2rem;
+    }
+    .modal-content {
+        border-radius: 20px;
+        max-height: 85vh;
+    }
+    .modal-header {
+        padding: 1.2rem;
+    }
+    .modal-body {
+        padding: 1.2rem;
+    }
+}
+
+@media (max-width: 380px) {
+    body {
+        padding: 8px;
+    }
+    .container {
+        padding: 1rem;
+        border-radius: 14px;
+    }
+    #app-title {
+        font-size: 1.5rem;
+    }
+    .countdown-box {
+        font-size: clamp(2.8rem, 14vw, 3.5rem);
+        border-radius: 18px;
+        padding: 0.8rem 0.4rem;
+    }
+    .phase-label {
+        font-size: 1rem;
+    }
+    .btn {
+        min-height: 50px;
+        font-size: 0.85rem;
+    }
+    .chip {
+        padding: 10px 12px;
+        min-height: 40px;
+        font-size: 0.8rem;
+    }
+    .settings {
+        padding: 1rem;
+    }
+    .modal-content {
+        border-radius: 16px;
+    }
+    .modal-header {
+        padding: 1rem;
+    }
+    .modal-body {
+        padding: 1rem;
+    }
+}
+
+@media (max-width: 360px) {
+    body {
+        padding: 6px;
+    }
+    .container {
+        padding: 0.8rem;
+    }
+    .chip-group {
+        gap: 6px;
+    }
+    .chip {
+        padding: 8px 10px;
+        min-width: 42px;
+        min-height: 36px;
+        font-size: 0.75rem;
+        border-radius: 10px;
     }
 }
