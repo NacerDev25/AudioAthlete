@@ -36,7 +36,11 @@ const translations = {
         closeSettingsLabel: 'Close Settings',
         installBtn: 'Install App on Home Screen',
         installToast: 'Tip: You can install this app from settings for offline use.',
-        installSuccess: 'Thank you for installing AudioAthlete!'
+        installSuccess: 'Thank you for installing AudioAthlete!',
+        updateBtn: 'Check for Updates',
+        updateChecking: 'Checking for updates...',
+        updateReady: 'Update ready. Reloading...',
+        updateNone: 'Already up to date!'
     },
     ar: {
         dir: 'rtl',
@@ -71,7 +75,11 @@ const translations = {
         closeSettingsLabel: 'إغلاق الإعدادات',
         installBtn: 'تثبيت التطبيق على الشاشة الرئيسية',
         installToast: 'تلميح: يمكنك تثبيت التطبيق من الإعدادات لاستخدامه بدون إنترنت.',
-        installSuccess: 'شكراً لتثبيتك أوديو أثليت!'
+        installSuccess: 'شكراً لتثبيتك أوديو أثليت!',
+        updateBtn: 'التحقق من التحديثات',
+        updateChecking: 'جارٍ التحقق من التحديثات...',
+        updateReady: 'التحديث جاهز. إعادة التحميل...',
+        updateNone: 'لا توجد تحديثات متاحة!'
     }
 };
 
@@ -480,6 +488,8 @@ function updateLanguage() {
     if (installBtn) installBtn.textContent = lang.installBtn;
     const toastMsg = document.getElementById('toast-msg');
     if (toastMsg) toastMsg.textContent = lang.installToast;
+    const updateBtn = document.getElementById('update-btn');
+    if (updateBtn) updateBtn.textContent = lang.updateBtn;
 
     calculateRounds();
     updateDisplay();
@@ -659,11 +669,63 @@ function showInstallToast() {
 }
 
 // SERVICE WORKER REGISTRATION
+let swRegistration = null;
+
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js')
-            .then(reg => console.log('PWA Service Worker registered successfully'))
-            .catch(err => console.log('PWA Service Worker registration failed', err));
+        navigator.serviceWorker.register('sw.js?v=5').then(reg => {
+            swRegistration = reg;
+            console.log('PWA Service Worker registered successfully');
+            reg.addEventListener('updatefound', () => {
+                const newSW = reg.installing;
+                if (newSW) {
+                    newSW.addEventListener('statechange', () => {
+                        if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+                            const updateBtn = document.getElementById('update-btn');
+                            if (updateBtn) {
+                                updateBtn.textContent = translations[currentLanguage].updateReady;
+                                updateBtn.style.backgroundColor = 'var(--secondary-color)';
+                            }
+                        }
+                    });
+                }
+            });
+            if (reg.waiting) {
+                const updateBtn = document.getElementById('update-btn');
+                if (updateBtn) {
+                    updateBtn.textContent = translations[currentLanguage].updateReady;
+                    updateBtn.style.backgroundColor = 'var(--secondary-color)';
+                }
+            }
+        }).catch(err => console.log('PWA Service Worker registration failed', err));
     });
 }
+
+function checkForUpdates() {
+    const lang = translations[currentLanguage];
+    const updateBtn = document.getElementById('update-btn');
+    if (!swRegistration) {
+        if (updateBtn) updateBtn.textContent = lang.updateNone;
+        return;
+    }
+    updateBtn.textContent = lang.updateChecking;
+    swRegistration.update().then(() => {
+        if (swRegistration.waiting) {
+            swRegistration.waiting.postMessage({action: 'skipWaiting'});
+            setTimeout(() => window.location.reload(), 500);
+        } else {
+            updateBtn.textContent = lang.updateNone;
+            setTimeout(() => {
+                if (updateBtn) updateBtn.textContent = lang.updateBtn;
+            }, 3000);
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const updateBtn = document.getElementById('update-btn');
+    if (updateBtn) {
+        updateBtn.addEventListener('click', checkForUpdates);
+    }
+});
 

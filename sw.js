@@ -1,4 +1,4 @@
-const CACHE_NAME = 'audioathlete-v4';
+const CACHE_NAME = 'audioathlete-v5';
 const ASSETS_TO_CACHE = [
   'index.html',
   'style.css',
@@ -44,6 +44,13 @@ self.addEventListener('activate', (event) => {
     })
   );
   return self.clients.claim();
+});
+
+// Message event: Listen for skipWaiting command from the client
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.action === 'skipWaiting') {
+    self.skipWaiting();
+  }
 });
 
 // Fetch event: Network-first falling back to cache
