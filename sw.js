@@ -1,4 +1,4 @@
-const CACHE_NAME = 'audioathlete-v3';
+const CACHE_NAME = 'audioathlete-v4';
 const ASSETS_TO_CACHE = [
   'index.html',
   'style.css',
@@ -7,6 +7,7 @@ const ASSETS_TO_CACHE = [
   'icon-192.png',
   'icon-512.png',
   'icon.svg',
+  'icon-bell.svg',
   'ar_start.mp3',
   'ar_half.mp3',
   'ar_three.mp3',
